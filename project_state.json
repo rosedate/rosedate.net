@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0.0",
+  "projectStateVersion": 3,
+  "summary": "Chat application with group settings member management. User wants to add members from conversations (not by principal ID) in group settings.",
+  "architectural_notes": [],
+  "known_issues": [],
+  "isFixRequest": false,
+  "existing_features": [
+    {
+      "id": "feature-in-the-group-settings-panel-inside-groupchatpage-replace-the-current-principal-id-based-member-input-with-a-searchable-list-of-users-derived-from-the-current-user-s-existing-direct-message-conversations-display-each-conversation-contact-by-their-display-name-and-username-allow-the-group-admin-creator-to-select-one-or-more-contacts-from-this-list-and-add-them-as-group-members",
+      "title": "In the group settings panel (inside GroupChatPage), replace the current principal-ID-based member input with a searchable list of users derived from the current user's existing direct message conversations. Display each conversation contact by their display name and username. Allow the group admin/creator to select one or more contacts from this list and add them as group members.",
+      "reqIds": [
+        "REQ-1"
+      ],
+      "version": 1
+    }
+  ],
+  "new_feature_requests": [
+    {
+      "id": "AR-1",
+      "summary": "In group settings, allow adding members from existing conversations instead of by principal ID",
+      "reqIds": [],
+      "status": "pending"
+    }
+  ],
+  "gameProjectType": "none",
+  "projectName": "Rose Dating",
+  "clarification_mode": "instant",
+  "clarification_rounds": 0
+}

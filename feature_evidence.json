@@ -1,0 +1,29 @@
+{
+  "kind": "feature_evidence_report",
+  "features": [
+    {
+      "featureId": "feature-in-the-group-settings-panel-inside-groupchatpage-replace-the-current-principal-id-based-member-input-with-a-searchable-list-of-users-derived-from-the-current-user-s-existing-direct-message-conversations-display-each-conversation-contact-by-their-display-name-and-username-allow-the-group-admin-creator-to-select-one-or-more-contacts-from-this-list-and-add-them-as-group-members",
+      "featureTitle": "In the group settings panel (inside GroupChatPage), replace the current principal-ID-based member input with a searchable list of users derived from the current user's existing direct message conversations. Display each conversation contact by their display name and username. Allow the group admin/creator to select one or more contacts from this list and add them as group members.",
+      "files": [
+        "frontend/src/pages/GroupChatPage.tsx"
+      ],
+      "components": [
+        "authorization@1.0.1",
+        "blob-storage@2.0.3",
+        "http-outcalls@1.1.1",
+        "stripe@1.0.1",
+        "core-infrastructure@1.0.2",
+        "shadcn-ui@1.0.0",
+        "build-template-react@1.0.0",
+        "initial-app@1.0.0",
+        "camera@1.0.0",
+        "qr-code@1.0.0",
+        "github-export-icp-cli@1.0.0"
+      ],
+      "testIds": [
+        "REQ-1"
+      ],
+      "confidence": "high"
+    }
+  ]
+}

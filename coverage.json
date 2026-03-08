@@ -1,0 +1,37 @@
+{
+  "kind": "coverage_report",
+  "version": "1.0",
+  "generatedAt": "2026-03-03T09:44:26.499Z",
+  "sources": {
+    "buildRequest": true,
+    "implementationPlan": true
+  },
+  "requirements": {
+    "total": 1,
+    "implemented": 1,
+    "items": [
+      {
+        "id": "REQ-1",
+        "summary": "In the group settings panel (inside GroupChatPage), replace the current principal-ID-based member input with a searchable list of users derived from the current user's existing direct message conversations. Display each conversation contact by their display name and username. Allow the group admin/creator to select one or more contacts from this list and add them as group members.",
+        "status": "implemented",
+        "plannedFiles": [
+          "frontend/src/pages/GroupChatPage.tsx"
+        ],
+        "matchedFiles": [
+          "frontend/src/pages/GroupChatPage.tsx"
+        ]
+      }
+    ]
+  },
+  "changedFiles": [
+    "build-request.json",
+    "feature_evidence.json",
+    "frontend-file-summaries.txt",
+    "frontend-implementation-plan.json",
+    "frontend/src/pages/GroupChatPage.tsx",
+    "project_state.json",
+    "scratch/component-selection.json",
+    "spec.md",
+    "spec_vs_diff_report.json"
+  ]
+}

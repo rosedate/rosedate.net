@@ -1,0 +1,26 @@
+{
+  "kind": "implementation_plan",
+  "version": "1.0",
+  "title": "Add members from conversations in group settings",
+  "requirements": [
+    {
+      "id": "REQ-1",
+      "summary": "Replace principal-ID-based member input with searchable conversation contact list in group settings panel",
+      "acceptanceCriteria": [
+        "The group settings panel no longer shows a raw principal-ID text input for adding members.",
+        "A searchable list or dropdown is shown, populated from the user's existing direct message conversation contacts.",
+        "Each contact entry displays the contact's display name and username (not their principal ID).",
+        "Selecting a contact and confirming adds them to the group chat.",
+        "All other group settings functionality (rename, change avatar, remove members, leave group, etc.) remains unchanged.",
+        "Users who are already members of the group are either hidden from the list or shown as disabled/already-added."
+      ],
+      "file_operations": [
+        {
+          "path": "frontend/src/pages/GroupChatPage.tsx",
+          "operation": "modify",
+          "description": "Modify the group settings panel to replace the current principal-ID text input for adding members with a searchable dropdown that displays conversation contacts. Fetch the user's existing conversations using the useGetConversations hook, extract unique contacts with their profiles (displayName and username), filter out users already in the group, and render a Select component (or Command component for better search) that shows each contact's name and username. When a contact is selected, call the addGroupParticipant mutation with the selected principal. Preserve all existing group settings functionality including rename, avatar update, member removal, and leave group. Verify that the existing UI structure and state management remain intact."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "kind": "build_request",
+  "title": "Add members from conversations in group settings",
+  "projectName": "Rose Dating",
+  "priority": "normal",
+  "requirements": [
+    {
+      "id": "REQ-1",
+      "text": "In the group settings panel (inside GroupChatPage), replace the current principal-ID-based member input with a searchable list of users derived from the current user's existing direct message conversations. Display each conversation contact by their display name and username. Allow the group admin/creator to select one or more contacts from this list and add them as group members.",
+      "target": "frontend",
+      "source": {
+        "messageIds": [
+          "msg-latest"
+        ],
+        "quotes": [
+          "in the group setting, let me add members from conversation; not by principal id"
+        ]
+      },
+      "acceptanceCriteria": [
+        "The group settings panel no longer shows a raw principal-ID text input for adding members.",
+        "A searchable list or dropdown is shown, populated from the user's existing direct message conversation contacts.",
+        "Each contact entry displays the contact's display name and username (not their principal ID).",
+        "Selecting a contact and confirming adds them to the group chat.",
+        "All other group settings functionality (rename, change avatar, remove members, leave group, etc.) remains unchanged.",
+        "Users who are already members of the group are either hidden from the list or shown as disabled/already-added."
+      ]
+    }
+  ],
+  "constraints": [
+    "Do not modify any other group settings functionality beyond the add-member flow.",
+    "Do not alter backend data models or endpoints — use existing conversation and group chat queries.",
+    "Do not edit files under frontend/src/hooks/useInternetIdentity.ts, frontend/src/hooks/useActor.ts, frontend/src/main.tsx, or frontend/src/components/ui."
+  ],
+  "nonGoals": [
+    "Adding members by principal ID.",
+    "Searching for users outside of existing conversations.",
+    "Changing the group chat messaging UI.",
+    "Any backend schema or API changes."
+  ],
+  "imageRequirements": {
+    "required": [],
+    "edits": []
+  }
+}
