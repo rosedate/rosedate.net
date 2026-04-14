@@ -1,0 +1,25 @@
+{
+  "overview": "Rose Dating is a romantic dating and social app on the Internet Computer with profiles, posts, stories, direct and group chats, and a tokenized in-app economy (Rose Credits). It features a rose-themed UI with pink gradients, PWA support, and real-time social interactions.",
+  "features": [
+    "User profiles with online status indicators",
+    "Direct and group messaging with emoji reactions",
+    "Posts and stories with embed support (YouTube, X, TikTok)",
+    "In-app Rose Credits economy with peer-to-peer trading",
+    "Notification center with pagination",
+    "Profile post management (edit/delete)",
+    "QR code chat sharing",
+    "PWA installable app"
+  ],
+  "category": "social",
+  "tags": [
+    "dating",
+    "social",
+    "chat",
+    "posts",
+    "reactions",
+    "online-status",
+    "icp",
+    "pwa"
+  ],
+  "last_updated": "2026-04-12T03:32:41.410Z"
+}

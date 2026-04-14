@@ -1,0 +1,508 @@
+type http_request_result = 
+ record {
+   body: blob;
+   headers: vec http_header;
+   status: nat;
+ };
+type http_header = 
+ record {
+   name: text;
+   value: text;
+ };
+type _ImmutableObjectStorageRefillResult = 
+ record {
+   success: opt bool;
+   topped_up_amount: opt nat;
+ };
+type _ImmutableObjectStorageRefillInformation = record {
+                                                  proposed_top_up_amount:
+                                                   opt nat;};
+type _ImmutableObjectStorageCreateCertificateResult = 
+ record {
+   blob_hash: text;
+   method: text;
+ };
+type UserRole = 
+ variant {
+   admin;
+   guest;
+   user;
+ };
+type UserProfile = 
+ record {
+   bio: opt text;
+   birthYear: opt nat;
+   country: text;
+   gender: opt text;
+   name: text;
+   profilePicture: opt ExternalBlob;
+   username: text;
+ };
+type TransformationOutput = 
+ record {
+   body: blob;
+   headers: vec http_header;
+   status: nat;
+ };
+type TransformationInput = 
+ record {
+   context: blob;
+   response: http_request_result;
+ };
+type TradeRequestMessage = 
+ record {
+   amount: float64;
+   requestType: text;
+   requester: principal;
+   summary: text;
+   timestamp: Time;
+ };
+type Time = int;
+type StripeSessionStatus = 
+ variant {
+   completed: record {
+                response: text;
+                userPrincipal: opt text;
+              };
+   failed: record {error: text;};
+ };
+type StripeConfiguration = 
+ record {
+   allowedCountries: vec text;
+   secretKey: text;
+ };
+type Story = 
+ record {
+   author: principal;
+   content: MessageType;
+   expiresAt: Time;
+   id: nat;
+   timestamp: Time;
+   viewCount: nat;
+   viewedBy: vec principal;
+ };
+type ShoppingItem = 
+ record {
+   currency: text;
+   priceInCents: nat;
+   productDescription: text;
+   productName: text;
+   quantity: nat;
+ };
+type SearchResult = 
+ variant {
+   messageResult:
+    record {
+      contentSnippet: text;
+      conversationId: nat;
+      messageId: nat;
+      receiver: principal;
+      searchType: text;
+      sender: principal;
+      senderProfile: opt UserProfile;
+      timestamp: Time;
+    };
+   postResult:
+    record {
+      author: principal;
+      contentSnippet: text;
+      image: opt ExternalBlob;
+      postId: text;
+      searchType: text;
+      timestamp: Time;
+    };
+   userResult:
+    record {
+      balance: float64;
+      "principal": principal;
+      profile: UserProfile;
+      searchType: text;
+    };
+ };
+type RoseTransactionType = 
+ variant {
+   buy;
+   fee;
+   gift;
+   mint;
+   sell;
+   transfer;
+ };
+type RoseTransaction = 
+ record {
+   amount: float64;
+   feeDistributed: float64;
+   id: nat;
+   receiver: opt principal;
+   sender: opt principal;
+   timestamp: Time;
+   transactionType: RoseTransactionType;
+ };
+type ReceiptMessage = 
+ record {
+   amount: float64;
+   fee: float64;
+   receiver: principal;
+   sender: principal;
+   summary: text;
+   timestamp: Time;
+ };
+type ProfileWithPrincipal = 
+ record {
+   balance: float64;
+   "principal": principal;
+   profile: UserProfile;
+ };
+type ProfileFilter = 
+ record {
+   country: opt text;
+   gender: opt text;
+   maxAge: opt nat;
+   minAge: opt nat;
+   minBalance: opt float64;
+ };
+type Post = 
+ record {
+   author: principal;
+   content: text;
+   embed: opt text;
+   id: text;
+   image: opt ExternalBlob;
+   timestamp: Time;
+   viewCount: nat;
+ };
+type NotificationType = 
+ variant {
+   comment;
+   follow;
+   groupAdd;
+   groupMessage;
+   like;
+   message;
+   postGift;
+   roseGift;
+   roseReceipt;
+   storyView;
+   systemNotice;
+   tradeRequest;
+ };
+type NotificationCount = 
+ record {
+   commentCount: nat;
+   followCount: nat;
+   groupAddCount: nat;
+   groupMessageCount: nat;
+   likeCount: nat;
+   messageCount: nat;
+   postGiftCount: nat;
+   roseGiftCount: nat;
+   roseReceiptCount: nat;
+   storyViewCount: nat;
+   systemCount: nat;
+   totalCount: nat;
+   tradeRequestCount: nat;
+   unreadCount: nat;
+ };
+type Notification = 
+ record {
+   content: text;
+   id: nat;
+   isRead: bool;
+   linkedId: opt text;
+   linkedType: opt text;
+   notificationType: NotificationType;
+   timestamp: Time;
+   userId: principal;
+ };
+type MessageType = 
+ variant {
+   forwardedPost:
+    record {
+      author: principal;
+      contentSnippet: text;
+      image: opt ExternalBlob;
+      postId: text;
+      timestamp: Time;
+    };
+   image: ExternalBlob;
+   media: ExternalBlob;
+   receipt: ReceiptMessage;
+   rose: float64;
+   "text": text;
+   tradeRequest: TradeRequestMessage;
+   video: ExternalBlob;
+   voice: ExternalBlob;
+ };
+type Message = 
+ record {
+   content: MessageType;
+   id: nat;
+   isDeleted: bool;
+   isEdited: bool;
+   reactions: vec record {
+                    text;
+                    vec principal;
+                  };
+   readBy: vec principal;
+   receiver: principal;
+   replyToId: opt nat;
+   sender: principal;
+   senderProfile: opt UserProfile;
+   timestamp: Time;
+ };
+type GroupMessage = 
+ record {
+   content: MessageType;
+   groupId: nat;
+   id: nat;
+   isDeleted: bool;
+   isEdited: bool;
+   reactions: vec record {
+                    text;
+                    vec principal;
+                  };
+   readBy: vec principal;
+   replyToId: opt nat;
+   sender: principal;
+   senderProfile: opt UserProfile;
+   timestamp: Time;
+ };
+type GroupChat = 
+ record {
+   admins: vec principal;
+   avatar: opt ExternalBlob;
+   createdAt: Time;
+   creator: principal;
+   id: nat;
+   name: text;
+   participants: vec principal;
+ };
+type ExternalBlob = blob;
+type Conversation = 
+ record {
+   id: nat;
+   messages: vec Message;
+   otherParticipantProfile: opt UserProfile;
+   participants: vec principal;
+ };
+type CommentInteraction = 
+ record {
+   comment: text;
+   id: nat;
+   parentCommentId: opt nat;
+   postId: text;
+   timestamp: Time;
+   user: principal;
+ };
+type BlockRecord = 
+ record {
+   blocked: principal;
+   blocker: principal;
+   timestamp: Time;
+ };
+type AnalyticsSummary = 
+ record {
+   activeUsers: nat;
+   totalMessages: nat;
+   totalPlatformFees: float64;
+   totalPosts: nat;
+   totalRoseGifts: float64;
+   totalRoseTransactions: nat;
+   totalRosesCirculating: float64;
+   totalUsers: nat;
+ };
+service : {
+  _immutableObjectStorageBlobsAreLive: (hashes: vec blob) -> (vec bool) query;
+  _immutableObjectStorageBlobsToDelete: () -> (vec blob) query;
+  _immutableObjectStorageConfirmBlobDeletion: (blobs: vec blob) -> ();
+  _immutableObjectStorageCreateCertificate: (blobHash: text) ->
+   (_ImmutableObjectStorageCreateCertificateResult);
+  _immutableObjectStorageRefillCashier: (refillInformation:
+   opt _ImmutableObjectStorageRefillInformation) ->
+   (_ImmutableObjectStorageRefillResult);
+  _immutableObjectStorageUpdateGatewayPrincipals: () -> ();
+  _initializeAccessControl: () -> ();
+  addGroupParticipant: (groupId: nat, newParticipant: principal) -> ();
+  assignCallerUserRole: (user: principal, role: UserRole) -> ();
+  blockUser: (userToBlock: principal) -> ();
+  buyRosesFromUser: (seller: principal, amount: float64) -> ();
+  claimAllRoses: () -> ();
+  cleanupExpiredStories: () -> (nat);
+  clearAllNotifications: () -> ();
+  commentOnPost: (postId: text, comment: text, parentCommentId: opt nat) ->
+   ();
+  convertBalanceToUsd: (amount: float64) -> (float64);
+  convertBalanceToUsdQuery: (amount: float64) -> (float64) query;
+  createCheckoutSession: (items: vec ShoppingItem, successUrl: text,
+   cancelUrl: text) -> (text);
+  createGroupChat: (name: text, initialParticipants: vec principal, avatar:
+   opt ExternalBlob) -> (nat);
+  createPost: (content: text, image: opt ExternalBlob, embed: opt text) -> ();
+  createStory: (content: MessageType) -> (nat);
+  deleteCallerProfile: () -> ();
+  deleteComment: (postId: text, commentId: nat) -> ();
+  deleteGroupMessage: (groupId: nat, messageId: nat) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  deleteMessage: (conversationId: nat, messageId: nat) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  deleteNotification: (notificationId: nat) -> ();
+  deletePost: (postId: text) -> ();
+  editGroupMessage: (groupId: nat, messageId: nat, newText: text) ->
+   (variant {
+      err: text;
+      ok: GroupMessage;
+    });
+  editMessage: (conversationId: nat, messageId: nat, newText: text) ->
+   (variant {
+      err: text;
+      ok: Message;
+    });
+  editPost: (postId: text, content: text, image: opt ExternalBlob, embed:
+   opt text) -> ();
+  filterProfiles: (filter: ProfileFilter) -> (vec ProfileWithPrincipal) query;
+  followUser: (targetUser: principal) -> ();
+  forwardGroupMessageToConversation: (sourceGroupId: nat, messageId: 
+   nat, targetConversationId: nat) -> (variant {
+                                         err: text;
+                                         ok: Message;
+                                       });
+  forwardMessage: (sourceConversationId: nat, messageId: nat,
+   targetConversationId: nat) -> (variant {
+                                    err: text;
+                                    ok: Message;
+                                  });
+  forwardMessageToGroup: (sourceConversationId: nat, messageId: nat,
+   targetGroupId: nat) -> (variant {
+                             err: text;
+                             ok: GroupMessage;
+                           });
+  forwardPostToConversation: (postId: text, conversationId: nat) -> ();
+  getActiveStories: () -> (vec Story) query;
+  getAllBlockRecords: () -> (vec BlockRecord) query;
+  getAllRoseTransactions: () -> (vec RoseTransaction) query;
+  getAllUserProfiles: () -> (vec record {
+                                   principal;
+                                   UserProfile;
+                                 }) query;
+  getAnalyticsSummary: () -> (AnalyticsSummary) query;
+  getBlockedUsers: () -> (vec principal) query;
+  getCallerPosts: () -> (vec Post) query;
+  getCallerUserProfile: () -> (UserProfile) query;
+  getCallerUserRole: () -> (UserRole) query;
+  getConversations: () -> (vec Conversation) query;
+  getFollowerCount: (targetUser: principal) -> (nat) query;
+  getFollowingCount: (targetUser: principal) -> (nat) query;
+  getGroupChats: () -> (vec GroupChat) query;
+  getGroupDetails: (groupId: nat) -> (GroupChat) query;
+  getGroupMessages: (groupId: nat) -> (vec GroupMessage) query;
+  getIcpUsdExchangeRate: () -> (float64);
+  getNotificationCountByType: () -> (NotificationCount) query;
+  getNotifications: (limit: nat, offset: nat) ->
+   (record {
+      notifications: vec Notification;
+      total: nat;
+    }) query;
+  getOnlineUsers: () -> (vec principal) query;
+  getPinnedStories: (userId: principal) -> (vec Story) query;
+  getPinnedTrendingPost: () -> (opt Post) query;
+  getPostComments: (postId: text) -> (vec CommentInteraction) query;
+  getPostInteractions: (postId: text) ->
+   (record {
+      comments: nat;
+      forwards: nat;
+      likes: nat;
+      roseGifts: nat;
+      saves: nat;
+      totalRosesGifted: float64;
+    }) query;
+  getPostViewCount: (postId: text) -> (nat) query;
+  getPosts: () -> (vec Post) query;
+  getPostsFromFollowedUsers: () -> (vec Post) query;
+  getRoseBalance: () -> (float64) query;
+  getRoseSummary: () ->
+   (record {
+      feeRewards: float64;
+      totalCirculating: float64;
+      userBalance: float64;
+    }) query;
+  getRoseTransactionHistory: () -> (vec RoseTransaction) query;
+  getSavedPosts: () -> (vec Post) query;
+  getStripeSessionStatus: (sessionId: text) -> (StripeSessionStatus);
+  getTotalCirculatingRoses: () -> (float64) query;
+  getUnreadNotificationCount: () -> (nat) query;
+  getUserPosts: (userId: principal) -> (vec Post) query;
+  getUserProfile: (record {profileId: principal;}) -> (UserProfile) query;
+  getUserRoseBalance: (user: principal) -> (float64) query;
+  getUserStories: (userId: principal) -> (vec Story) query;
+  giftRoses: (receiver: principal, amount: float64) -> ();
+  giftRosesOnPost: (postId: text, amount: float64) -> ();
+  isCallerAdmin: () -> (bool) query;
+  isFollowing: (targetUser: principal) -> (bool) query;
+  isOnline: (userId: principal) -> (bool) query;
+  isStripeConfigured: () -> (bool) query;
+  isUserBlocked: (user: principal) -> (bool) query;
+  leaveConversation: (conversationId: nat) -> ();
+  leaveGroup: (groupId: nat) -> ();
+  likePost: (postId: text) -> ();
+  markAllNotificationsAsRead: () -> ();
+  markGroupMessageRead: (groupId: nat, messageId: nat) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  markMessageRead: (sender: principal, messageId: nat) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  markNotificationAsRead: (notificationId: nat) -> ();
+  markStoryAsViewed: (storyId: nat) -> ();
+  pinPostToTrending: (postId: text) -> ();
+  pinStory: (storyId: nat) -> (variant {
+                                 err: text;
+                                 ok;
+                               });
+  reactToGroupMessage: (groupId: nat, messageId: nat, emoji: text) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  reactToMessage: (receiver: principal, messageId: nat, emoji: text) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  recordPostView: (postId: text) -> ();
+  removeGroupParticipant: (groupId: nat, participant: principal) -> ();
+  requestBuyRoses: (amount: float64) -> (text);
+  requestSellRoses: (amount: float64) -> (text);
+  saveCallerUserProfile: (profile: UserProfile) -> ();
+  savePost: (postId: text) -> ();
+  sellRosesToUser: (buyer: principal, amount: float64) -> ();
+  sendGroupMessage: (groupId: nat, content: MessageType, replyToId:
+   opt nat) -> ();
+  sendMessage: (receiver: principal, content: MessageType, replyToId:
+   opt nat) -> ();
+  setStripeConfiguration: (config: StripeConfiguration) -> ();
+  transform: (input: TransformationInput) -> (TransformationOutput) query;
+  unblockUser: (userToUnblock: principal) -> ();
+  unfollowUser: (targetUser: principal) -> ();
+  universalSearch: (searchTerm: text, maxResults: opt nat) ->
+   (vec SearchResult) query;
+  unlikePost: (postId: text) -> ();
+  unpinStory: (storyId: nat) -> (variant {
+                                   err: text;
+                                   ok;
+                                 });
+  unpinTrendingPost: () -> ();
+  unsavePost: (postId: text) -> ();
+  updateGroupAvatar: (groupId: nat, newAvatar: opt ExternalBlob) -> ();
+  updateGroupName: (groupId: nat, newName: text) -> ();
+  updateLastActive: () -> ();
+}
