@@ -69,15 +69,19 @@ export interface GroupMessage {
     reactions: Array<[string, Array<Principal>]>;
     readBy: Array<Principal>;
 }
-export interface AnalyticsSummary {
-    activeUsers: bigint;
-    totalPlatformFees: number;
-    totalRosesCirculating: number;
-    totalRoseTransactions: bigint;
-    totalMessages: bigint;
-    totalUsers: bigint;
-    totalRoseGifts: number;
-    totalPosts: bigint;
+export interface EmailPreferences {
+    postGift: boolean;
+    groupMessage: boolean;
+    roseReceipt: boolean;
+    tradeRequest: boolean;
+    systemNotice: boolean;
+    storyView: boolean;
+    like: boolean;
+    comment: boolean;
+    groupAdd: boolean;
+    message: boolean;
+    roseGift: boolean;
+    follow: boolean;
 }
 export interface CommentInteraction {
     id: bigint;
@@ -91,6 +95,16 @@ export interface BlockRecord {
     blocked: Principal;
     blocker: Principal;
     timestamp: Time;
+}
+export interface AnalyticsSummary {
+    activeUsers: bigint;
+    totalPlatformFees: number;
+    totalRosesCirculating: number;
+    totalRoseTransactions: bigint;
+    totalMessages: bigint;
+    totalUsers: bigint;
+    totalRoseGifts: number;
+    totalPosts: bigint;
 }
 export interface RoseTransaction {
     id: bigint;
@@ -130,6 +144,13 @@ export interface Post {
     timestamp: Time;
     image?: ExternalBlob;
 }
+export interface UserAnalytics {
+    giftsReceived: bigint;
+    postCount: bigint;
+    roseBalance: number;
+    reactionsReceived: bigint;
+    messageCount: bigint;
+}
 export type StripeSessionStatus = {
     __kind__: "completed";
     completed: {
@@ -145,6 +166,12 @@ export type StripeSessionStatus = {
 export interface StripeConfiguration {
     allowedCountries: Array<string>;
     secretKey: string;
+}
+export interface PlatformStats {
+    totalMessages: bigint;
+    totalUsers: bigint;
+    totalInteractions: bigint;
+    totalPosts: bigint;
 }
 export interface Story {
     id: bigint;
@@ -271,6 +298,8 @@ export interface UserProfile {
     username: string;
     birthYear?: bigint;
     name: string;
+    email?: string;
+    emailPreferences?: EmailPreferences;
     gender?: string;
     profilePicture?: ExternalBlob;
 }
@@ -379,7 +408,18 @@ export interface backendInterface {
     getAllUserProfiles(): Promise<Array<[Principal, UserProfile]>>;
     getAnalyticsSummary(): Promise<AnalyticsSummary>;
     getBlockedUsers(): Promise<Array<Principal>>;
+    getCallerEmailPreferences(): Promise<{
+        email?: string;
+        preferences?: EmailPreferences;
+    }>;
     getCallerPosts(): Promise<Array<Post>>;
+    getCallerUserAnalytics(): Promise<{
+        __kind__: "ok";
+        ok: UserAnalytics;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     getCallerUserProfile(): Promise<UserProfile>;
     getCallerUserRole(): Promise<UserRole>;
     getConversations(): Promise<Array<Conversation>>;
@@ -397,6 +437,7 @@ export interface backendInterface {
     getOnlineUsers(): Promise<Array<Principal>>;
     getPinnedStories(userId: Principal): Promise<Array<Story>>;
     getPinnedTrendingPost(): Promise<Post | null>;
+    getPlatformStats(): Promise<PlatformStats>;
     getPostComments(postId: string): Promise<Array<CommentInteraction>>;
     getPostInteractions(postId: string): Promise<{
         totalRosesGifted: number;
@@ -479,6 +520,7 @@ export interface backendInterface {
     removeGroupParticipant(groupId: bigint, participant: Principal): Promise<void>;
     requestBuyRoses(amount: number): Promise<string>;
     requestSellRoses(amount: number): Promise<string>;
+    saveCallerEmailPreferences(email: string | null, preferences: EmailPreferences): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     savePost(postId: string): Promise<void>;
     sellRosesToUser(buyer: Principal, amount: number): Promise<void>;

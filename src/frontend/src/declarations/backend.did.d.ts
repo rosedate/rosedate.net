@@ -39,6 +39,20 @@ export interface Conversation {
   'messages' : Array<Message>,
   'otherParticipantProfile' : [] | [UserProfile],
 }
+export interface EmailPreferences {
+  'postGift' : boolean,
+  'groupMessage' : boolean,
+  'roseReceipt' : boolean,
+  'tradeRequest' : boolean,
+  'systemNotice' : boolean,
+  'storyView' : boolean,
+  'like' : boolean,
+  'comment' : boolean,
+  'groupAdd' : boolean,
+  'message' : boolean,
+  'roseGift' : boolean,
+  'follow' : boolean,
+}
 export type ExternalBlob = Uint8Array;
 export interface GroupChat {
   'id' : bigint,
@@ -130,6 +144,12 @@ export type NotificationType = { 'postGift' : null } |
   { 'message' : null } |
   { 'roseGift' : null } |
   { 'follow' : null };
+export interface PlatformStats {
+  'totalMessages' : bigint,
+  'totalUsers' : bigint,
+  'totalInteractions' : bigint,
+  'totalPosts' : bigint,
+}
 export interface Post {
   'id' : string,
   'content' : string,
@@ -245,12 +265,21 @@ export interface TransformationOutput {
   'body' : Uint8Array,
   'headers' : Array<http_header>,
 }
+export interface UserAnalytics {
+  'giftsReceived' : bigint,
+  'postCount' : bigint,
+  'roseBalance' : number,
+  'reactionsReceived' : bigint,
+  'messageCount' : bigint,
+}
 export interface UserProfile {
   'bio' : [] | [string],
   'country' : string,
   'username' : string,
   'birthYear' : [] | [bigint],
   'name' : string,
+  'email' : [] | [string],
+  'emailPreferences' : [] | [EmailPreferences],
   'gender' : [] | [string],
   'profilePicture' : [] | [ExternalBlob],
 }
@@ -369,7 +398,16 @@ export interface _SERVICE {
   'getAllUserProfiles' : ActorMethod<[], Array<[Principal, UserProfile]>>,
   'getAnalyticsSummary' : ActorMethod<[], AnalyticsSummary>,
   'getBlockedUsers' : ActorMethod<[], Array<Principal>>,
+  'getCallerEmailPreferences' : ActorMethod<
+    [],
+    { 'email' : [] | [string], 'preferences' : [] | [EmailPreferences] }
+  >,
   'getCallerPosts' : ActorMethod<[], Array<Post>>,
+  'getCallerUserAnalytics' : ActorMethod<
+    [],
+    { 'ok' : UserAnalytics } |
+      { 'err' : string }
+  >,
   'getCallerUserProfile' : ActorMethod<[], UserProfile>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getConversations' : ActorMethod<[], Array<Conversation>>,
@@ -387,6 +425,7 @@ export interface _SERVICE {
   'getOnlineUsers' : ActorMethod<[], Array<Principal>>,
   'getPinnedStories' : ActorMethod<[Principal], Array<Story>>,
   'getPinnedTrendingPost' : ActorMethod<[], [] | [Post]>,
+  'getPlatformStats' : ActorMethod<[], PlatformStats>,
   'getPostComments' : ActorMethod<[string], Array<CommentInteraction>>,
   'getPostInteractions' : ActorMethod<
     [string],
@@ -459,6 +498,10 @@ export interface _SERVICE {
   'removeGroupParticipant' : ActorMethod<[bigint, Principal], undefined>,
   'requestBuyRoses' : ActorMethod<[number], string>,
   'requestSellRoses' : ActorMethod<[number], string>,
+  'saveCallerEmailPreferences' : ActorMethod<
+    [[] | [string], EmailPreferences],
+    undefined
+  >,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'savePost' : ActorMethod<[string], undefined>,
   'sellRosesToUser' : ActorMethod<[Principal, number], undefined>,

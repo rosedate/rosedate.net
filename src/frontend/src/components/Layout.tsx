@@ -4,7 +4,6 @@ import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useGetCallerUserProfile } from "../hooks/useQueries";
 import BottomNav from "./BottomNav";
 import LoginRequiredPrompt from "./LoginRequiredPrompt";
-import PWAInstallPrompt from "./PWAInstallPrompt";
 import ProfileSetupModal from "./ProfileSetupModal";
 import TopNav from "./TopNav";
 
@@ -162,7 +161,6 @@ export default function Layout() {
         <Outlet />
       </main>
       <BottomNav />
-      <PWAInstallPrompt />
       {showProfileSetup && (
         <ProfileSetupModal onComplete={() => setShowProfileSetup(false)} />
       )}

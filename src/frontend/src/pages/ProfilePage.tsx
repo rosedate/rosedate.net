@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useNavigate } from "@tanstack/react-router";
 import {
   BarChart3,
+  Bell,
   Calendar,
   Camera,
   Edit,
@@ -316,6 +317,16 @@ export default function ProfilePage() {
                       Analytics
                     </Button>
                   )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto"
+                    onClick={() => navigate({ to: "/email-settings" })}
+                    data-ocid="profile.email_settings_button"
+                  >
+                    <Bell className="h-4 w-4 mr-2" />
+                    Email Notifications
+                  </Button>
                   <LoginButton />
                   <AlertDialog>
                     <AlertDialogTrigger asChild>

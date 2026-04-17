@@ -11,6 +11,7 @@ import Layout from "./components/Layout";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import ChatsPage from "./pages/ChatsPage";
 import ConversationPage from "./pages/ConversationPage";
+import EmailSettingsPage from "./pages/EmailSettingsPage";
 import GroupChatPage from "./pages/GroupChatPage";
 import PayPage from "./pages/PayPage";
 import PaymentFailurePage from "./pages/PaymentFailurePage";
@@ -136,6 +137,12 @@ const analyticsRoute = createRoute({
   component: AnalyticsPage,
 });
 
+const emailSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/email-settings",
+  component: EmailSettingsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   usersRoute,
@@ -150,6 +157,7 @@ const routeTree = rootRoute.addChildren([
   paymentSuccessRoute,
   paymentFailureRoute,
   analyticsRoute,
+  emailSettingsRoute,
 ]);
 
 const router = createRouter({

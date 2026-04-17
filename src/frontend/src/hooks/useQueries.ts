@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CommentInteraction,
   Conversation,
+  EmailPreferences,
   GroupChat,
   GroupMessage,
   Notification,
@@ -13,6 +14,7 @@ import type {
   RoseTransaction,
   SearchResult,
   Story,
+  UserAnalytics,
   UserProfile,
 } from "../backend";
 import { useActor } from "./useActor";
@@ -1391,15 +1393,36 @@ export function useGetIcpUsdExchangeRate() {
 
 // Analytics Hooks
 export function useGetAnalyticsSummary() {
-  const { actor } = useActor();
+  const { actor, isFetching: actorFetching } = useActor();
 
   return useQuery({
     queryKey: ["analyticsSummary"],
     queryFn: async () => {
-      if (!actor) return null;
+      if (!actor) throw new Error("Actor not available");
       return actor.getAnalyticsSummary();
     },
-    enabled: !!actor,
+    enabled: !!actor && !actorFetching,
+    refetchInterval: 60000,
+    refetchOnWindowFocus: true,
+    retry: 2,
+  });
+}
+
+export function useGetCallerUserAnalytics() {
+  const { actor, isFetching: actorFetching } = useActor();
+
+  return useQuery<UserAnalytics | null>({
+    queryKey: ["callerUserAnalytics"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.getCallerUserAnalytics();
+      if ("ok" in result) return result.ok;
+      return null;
+    },
+    enabled: !!actor && !actorFetching,
+    refetchInterval: 60000,
+    refetchOnWindowFocus: true,
+    retry: 2,
   });
 }
 
@@ -1645,6 +1668,44 @@ export function useAdminDeleteUser() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allUserProfiles"] });
+    },
+  });
+}
+
+// Email Preferences Hooks
+export function useGetCallerEmailPreferences() {
+  const { actor, isFetching: actorFetching } = useActor();
+
+  return useQuery<{ email?: string; preferences?: EmailPreferences }>({
+    queryKey: ["callerEmailPreferences"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getCallerEmailPreferences();
+    },
+    enabled: !!actor && !actorFetching,
+    refetchInterval: 30000,
+    staleTime: 1000 * 60 * 5,
+    retry: false,
+  });
+}
+
+export function useSaveCallerEmailPreferences() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      email,
+      preferences,
+    }: {
+      email: string | null;
+      preferences: EmailPreferences;
+    }) => {
+      if (!actor) throw new Error("Actor not available");
+      await actor.saveCallerEmailPreferences(email, preferences);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["callerEmailPreferences"] });
     },
   });
 }

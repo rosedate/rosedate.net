@@ -4,6 +4,7 @@ import Stripe "mo:caffeineai-stripe/stripe";
 import OutCall "mo:caffeineai-http-outcalls/outcall";
 import Storage "mo:caffeineai-object-storage/Storage";
 import MixinObjectStorage "mo:caffeineai-object-storage/Mixin";
+import EmailClient "mo:caffeineai-email/emailClient";
 import Principal "mo:core/Principal";
 import Map "mo:core/Map";
 import Text "mo:core/Text";
@@ -16,9 +17,9 @@ import Debug "mo:base/Debug";
 import Buffer "mo:base/Buffer";
 import Runtime "mo:core/Runtime";
 import Iter "mo:core/Iter";
+import Migration "migration";
 
-
-
+(with migration = Migration.run)
 actor {
   // Authorization
   let accessControlState = AccessControl.initState();
@@ -26,6 +27,21 @@ actor {
   include MixinObjectStorage();
 
   // User Profiles
+  public type EmailPreferences = {
+    message : Bool;
+    roseGift : Bool;
+    like : Bool;
+    comment : Bool;
+    follow : Bool;
+    tradeRequest : Bool;
+    systemNotice : Bool;
+    postGift : Bool;
+    roseReceipt : Bool;
+    storyView : Bool;
+    groupMessage : Bool;
+    groupAdd : Bool;
+  };
+
   public type UserProfile = {
     name : Text;
     username : Text;
@@ -34,6 +50,8 @@ actor {
     birthYear : ?Nat;
     bio : ?Text;
     profilePicture : ?Storage.ExternalBlob;
+    email : ?Text;
+    emailPreferences : ?EmailPreferences;
   };
 
   var userProfiles = Map.empty<Principal, UserProfile>();
@@ -292,6 +310,32 @@ actor {
     blockListMap.remove(caller);
   };
 
+  // Email Preferences
+  public query ({ caller }) func getCallerEmailPreferences() : async { email : ?Text; preferences : ?EmailPreferences } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Debug.trap("Unauthorized: Only users can view email preferences");
+    };
+    switch (userProfiles.get(caller)) {
+      case (?profile) { { email = profile.email; preferences = profile.emailPreferences } };
+      case null { { email = null; preferences = null } };
+    };
+  };
+
+  public shared ({ caller }) func saveCallerEmailPreferences(email : ?Text, preferences : EmailPreferences) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Debug.trap("Unauthorized: Only users can save email preferences");
+    };
+    switch (userProfiles.get(caller)) {
+      case (?profile) {
+        let updated = { profile with email; emailPreferences = ?preferences };
+        userProfiles.add(caller, updated);
+      };
+      case null {
+        Debug.trap("Profile not found");
+      };
+    };
+  };
+
   public query ({ caller }) func isFollowing(targetUser : Principal) : async Bool {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Debug.trap("Unauthorized: Only users can check following status");
@@ -360,7 +404,7 @@ actor {
     };
 
     // Send follow notification
-    createFollowNotification(caller, targetUser);
+    ignore createFollowNotification(caller, targetUser);
   };
 
   public shared ({ caller }) func unfollowUser(targetUser : Principal) : async () {
@@ -609,7 +653,7 @@ actor {
 
             // Send story view notification to author if viewer is not the author
             if (story.author != caller) {
-              createStoryViewNotification(caller, story.author, storyId);
+              ignore createStoryViewNotification(caller, story.author, storyId);
             };
           };
           case (?_) {};
@@ -915,7 +959,7 @@ actor {
         };
 
         // Send notification to new participant
-        createGroupAddNotification(caller, newParticipant, groupId, group.name);
+        ignore createGroupAddNotification(caller, newParticipant, groupId, group.name);
       };
       case null {
         Debug.trap("Group not found");
@@ -1139,7 +1183,7 @@ actor {
 
         for (participant in group.participants.vals()) {
           if (participant != caller) {
-            createGroupMessageNotification(caller, participant, groupId, group.name, contentPreview);
+            ignore createGroupMessageNotification(caller, participant, groupId, group.name, contentPreview);
           };
         };
       };
@@ -1323,7 +1367,7 @@ actor {
         sendReceiptMessage(caller, receiver, receipt);
 
         // Send notification to receiver
-        createRoseGiftNotification(caller, receiver, amount, nextRoseTransactionId - 1);
+        ignore createRoseGiftNotification(caller, receiver, amount, nextRoseTransactionId - 1);
       };
       case (#forwardedPost(postDetails)) {
         // Verify post exists
@@ -1394,7 +1438,7 @@ actor {
         };
 
         // Send message notification
-        createMessageNotification(caller, receiver, "Forwarded a post", nextConversationId - 1);
+        ignore createMessageNotification(caller, receiver, "Forwarded a post", nextConversationId - 1);
         return;
       };
       case (_) {};
@@ -1457,7 +1501,7 @@ actor {
           case (#media(_)) "Media";
           case (_) "New message";
         };
-        createMessageNotification(caller, receiver, contentPreview, convId);
+        ignore createMessageNotification(caller, receiver, contentPreview, convId);
       };
       case null {
         let convId = nextConversationId;
@@ -1479,7 +1523,7 @@ actor {
           case (#media(_)) "Media";
           case (_) "New message";
         };
-        createMessageNotification(caller, receiver, contentPreview, convId);
+        ignore createMessageNotification(caller, receiver, contentPreview, convId);
       };
     };
   };
@@ -1665,7 +1709,7 @@ actor {
           case (#media(_)) "Media";
           case (_) "Forwarded message";
         };
-        createMessageNotification(caller, receiver, contentPreview, targetConversationId);
+        ignore createMessageNotification(caller, receiver, contentPreview, targetConversationId);
         #ok(forwarded)
       };
     };
@@ -1817,7 +1861,7 @@ actor {
     };
     for (participant in targetGroup.participants.vals()) {
       if (participant != caller) {
-        createGroupMessageNotification(caller, participant, targetGroupId, targetGroup.name, contentPreview);
+        ignore createGroupMessageNotification(caller, participant, targetGroupId, targetGroup.name, contentPreview);
       };
     };
     #ok(forwarded)
@@ -1889,7 +1933,7 @@ actor {
           case (#media(_)) "Media";
           case (_) "Forwarded message";
         };
-        createMessageNotification(caller, receiver, contentPreview, targetConversationId);
+        ignore createMessageNotification(caller, receiver, contentPreview, targetConversationId);
         #ok(forwarded)
       };
     };
@@ -2021,7 +2065,7 @@ actor {
     };
 
     // Send trade request notification to admin
-    createTradeRequestNotification(requester, admin, tradeRequest.amount, tradeRequest.requestType);
+    // (notification is sent by the callers - requestBuyRoses / requestSellRoses)
   };
 
   public query ({ caller }) func getConversations() : async [Conversation] {
@@ -2326,7 +2370,7 @@ actor {
                 likesMap.add(postId, likes.concat([like]));
                 // Send like notification to post author
                 if (post.author != caller) {
-                  createLikeNotification(caller, post.author, postId, post.content);
+                  ignore createLikeNotification(caller, post.author, postId, post.content);
                 };
               };
               case (?_) {};
@@ -2336,7 +2380,7 @@ actor {
             likesMap.add(postId, [like]);
             // Send like notification to post author
             if (post.author != caller) {
-              createLikeNotification(caller, post.author, postId, post.content);
+              ignore createLikeNotification(caller, post.author, postId, post.content);
             };
           };
         };
@@ -2402,7 +2446,7 @@ actor {
 
         // Send comment notification to post author
         if (post.author != caller) {
-          createCommentNotification(caller, post.author, postId, comment);
+          ignore createCommentNotification(caller, post.author, postId, comment);
         };
       };
     };
@@ -2616,7 +2660,7 @@ actor {
         };
 
         // Send post gift notification to post author
-        createPostGiftNotification(caller, post.author, postId, amount);
+        ignore createPostGiftNotification(caller, post.author, postId, amount);
       };
     };
   };
@@ -2841,7 +2885,7 @@ actor {
     sendReceiptMessage(caller, receiver, receipt);
 
     // Send notification
-    createRoseGiftNotification(caller, receiver, amount, nextRoseTransactionId - 1);
+    ignore createRoseGiftNotification(caller, receiver, amount, nextRoseTransactionId - 1);
   };
 
   public shared ({ caller }) func claimAllRoses() : async () {
@@ -2997,6 +3041,7 @@ actor {
       case (?adminPrincipal) {
         let tradeRequest = createTradeRequestMessage(caller, amount, "BUY");
         sendTradeRequestMessage(caller, adminPrincipal, tradeRequest);
+        ignore createTradeRequestNotification(caller, adminPrincipal, amount, "BUY");
 
         "Buy request submitted for " # Float.toText(amount) # " Roses. A trade request message has been sent to admin 'rosalia'.";
       };
@@ -3028,6 +3073,7 @@ actor {
       case (?adminPrincipal) {
         let tradeRequest = createTradeRequestMessage(caller, amount, "SELL");
         sendTradeRequestMessage(caller, adminPrincipal, tradeRequest);
+        ignore createTradeRequestNotification(caller, adminPrincipal, amount, "SELL");
 
         "Sell request submitted for " # Float.toText(amount) # " Roses. A trade request message has been sent to admin 'rosalia'.";
       };
@@ -3139,13 +3185,8 @@ actor {
   };
 
   public query ({ caller }) func getAnalyticsSummary() : async AnalyticsSummary {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Debug.trap("Unauthorized: Only admins can view analytics");
-    };
-
-    // Additional verification for admin username
-    if (not verifyAdminByUsername(caller)) {
-      Debug.trap("Unauthorized: Only admin with username 'rosalia' can view analytics");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Debug.trap("Unauthorized: Only authenticated users can view analytics");
     };
 
     let totalUsers = userProfiles.size();
@@ -3193,6 +3234,114 @@ actor {
       totalRoseGifts;
       totalPlatformFees;
     };
+  };
+
+  // Personal user analytics
+  public type UserAnalytics = {
+    postCount : Nat;
+    messageCount : Nat;
+    reactionsReceived : Nat;
+    roseBalance : Float;
+    giftsReceived : Nat;
+  };
+
+  public query ({ caller }) func getCallerUserAnalytics() : async { #ok : UserAnalytics; #err : Text } {
+    if (caller.isAnonymous()) {
+      return #err("Authentication required");
+    };
+
+    switch (userProfiles.get(caller)) {
+      case null { return #err("Profile not found") };
+      case (?_) {};
+    };
+
+    // Count posts created by caller
+    var postCount = 0;
+    for ((_postId, post) in posts.entries()) {
+      if (post.author == caller) {
+        postCount += 1;
+      };
+    };
+
+    // Count direct messages sent by caller
+    var messageCount = 0;
+    for ((_convId, conv) in conversations.entries()) {
+      for (msg in conv.messages.vals()) {
+        if (msg.sender == caller) {
+          messageCount += 1;
+        };
+      };
+    };
+    // Count group messages sent by caller
+    for ((_groupId, msgs) in groupMessages.entries()) {
+      for (msg in msgs.vals()) {
+        if (msg.sender == caller) {
+          messageCount += 1;
+        };
+      };
+    };
+
+    // Count reactions received on caller's posts (via likes/comments)
+    var reactionsReceived = 0;
+    // Likes on caller's posts
+    for ((postId2, post) in posts.entries()) {
+      if (post.author == caller) {
+        switch (likesMap.get(postId2)) {
+          case (?likes) { reactionsReceived += likes.size() };
+          case null {};
+        };
+      };
+    };
+    // Reactions on caller's direct messages
+    for ((_convId, conv) in conversations.entries()) {
+      for (msg in conv.messages.vals()) {
+        if (msg.sender == caller) {
+          for ((_emoji, reactors) in msg.reactions.vals()) {
+            reactionsReceived += reactors.size();
+          };
+        };
+      };
+    };
+    // Reactions on caller's group messages
+    for ((_groupId, msgs) in groupMessages.entries()) {
+      for (msg in msgs.vals()) {
+        if (msg.sender == caller) {
+          for ((_emoji, reactors) in msg.reactions.vals()) {
+            reactionsReceived += reactors.size();
+          };
+        };
+      };
+    };
+
+    // Rose balance
+    let roseBalance = switch (roseBalances.get(caller)) {
+      case null { 0.0 };
+      case (?balance) { balance };
+    };
+
+    // Count gifts received (rose transactions where caller is the receiver and type is #gift)
+    var giftsReceived = 0;
+    for (tx in roseTransactions.vals()) {
+      switch (tx.receiver) {
+        case (?receiver) {
+          if (receiver == caller) {
+            switch (tx.transactionType) {
+              case (#gift) { giftsReceived += 1 };
+              case (_) {};
+            };
+          };
+        };
+        case null {};
+      };
+    };
+
+    #ok({
+      postCount;
+      messageCount;
+      reactionsReceived;
+      roseBalance;
+      giftsReceived;
+    });
   };
 
   public query ({ caller }) func getAllRoseTransactions() : async [RoseTransaction] {
@@ -3897,8 +4046,25 @@ actor {
     };
   };
 
+  // Email notification helper
+  // Fire-and-forget: sends an email if the recipient has an email address and
+  // has the given notification type enabled in their EmailPreferences.
+  func shouldSendEmail(recipient : Principal, check : EmailPreferences -> Bool) : ?(Text) {
+    switch (userProfiles.get(recipient)) {
+      case null null;
+      case (?profile) {
+        switch (profile.email, profile.emailPreferences) {
+          case (?email, ?prefs) {
+            if (check(prefs)) { ?email } else null
+          };
+          case _ null;
+        };
+      };
+    };
+  };
+
   // Notification Helper Functions
-  func createMessageNotification(sender : Principal, receiver : Principal, messageContent : Text, conversationId : Nat) {
+  func createMessageNotification(sender : Principal, receiver : Principal, messageContent : Text, conversationId : Nat) : async () {
     let preview = if (messageContent.size() > 30) {
       messageContent.trim(#char ' ')
     } else {
@@ -3908,6 +4074,17 @@ actor {
     let content = "New message from " # getUsername(sender) # ": " # preview;
     let notification = createNotification(receiver, #message, content, ?conversationId.toText(), ?"conversation");
     addNotification(notification);
+    switch (shouldSendEmail(receiver, func(p) { p.message })) {
+      case (?email) {
+        ignore await EmailClient.sendServiceEmail(
+          "rosedate",
+          [email],
+          "New message on Rose Dating",
+          "You have a new message from " # getUsername(sender) # ".\n\n" # content # "\n\nView it at https://rosedate.net",
+        );
+      };
+      case null {};
+    };
   };
 
   func getUsername(principal : Principal) : Text {
@@ -3917,14 +4094,25 @@ actor {
     };
   };
 
-  func createRoseGiftNotification(sender : Principal, receiver : Principal, amount : Float, transactionId : Nat) {
+  func createRoseGiftNotification(sender : Principal, receiver : Principal, amount : Float, transactionId : Nat) : async () {
     let senderUsername = getUsername(sender);
     let content = senderUsername # " sent you " # Float.toText(amount) # " ROSES!";
     let notification = createNotification(receiver, #roseGift, content, ?transactionId.toText(), ?"transaction");
     addNotification(notification);
+    switch (shouldSendEmail(receiver, func(p) { p.roseGift })) {
+      case (?email) {
+        ignore await EmailClient.sendServiceEmail(
+          "rosedate",
+          [email],
+          "You received Roses on Rose Dating",
+          content # "\n\nView your balance at https://rosedate.net",
+        );
+      };
+      case null {};
+    };
   };
 
-  func createLikeNotification(liker : Principal, postAuthor : Principal, postId : Text, postContent : Text) {
+  func createLikeNotification(liker : Principal, postAuthor : Principal, postId : Text, postContent : Text) : async () {
     let likerUsername = getUsername(liker);
     let preview = if (postContent.size() > 30) {
       postContent.trim(#char ' ')
@@ -3935,9 +4123,20 @@ actor {
     let content = likerUsername # " liked your post: " # preview;
     let notification = createNotification(postAuthor, #like, content, ?postId, ?"post");
     addNotification(notification);
+    switch (shouldSendEmail(postAuthor, func(p) { p.like })) {
+      case (?email) {
+        ignore await EmailClient.sendServiceEmail(
+          "rosedate",
+          [email],
+          "Someone liked your post on Rose Dating",
+          content # "\n\nView your post at https://rosedate.net",
+        );
+      };
+      case null {};
+    };
   };
 
-  func createCommentNotification(commenter : Principal, postAuthor : Principal, postId : Text, comment : Text) {
+  func createCommentNotification(commenter : Principal, postAuthor : Principal, postId : Text, comment : Text) : async () {
     let commenterUsername = getUsername(commenter);
     let preview = if (comment.size() > 30) {
       comment.trim(#char ' ')
@@ -3948,35 +4147,90 @@ actor {
     let content = commenterUsername # " commented: " # preview;
     let notification = createNotification(postAuthor, #comment, content, ?postId, ?"post");
     addNotification(notification);
+    switch (shouldSendEmail(postAuthor, func(p) { p.comment })) {
+      case (?email) {
+        ignore await EmailClient.sendServiceEmail(
+          "rosedate",
+          [email],
+          "New comment on your post on Rose Dating",
+          content # "\n\nView your post at https://rosedate.net",
+        );
+      };
+      case null {};
+    };
   };
 
-  func createFollowNotification(follower : Principal, followedUser : Principal) {
+  func createFollowNotification(follower : Principal, followedUser : Principal) : async () {
     let content = getUsername(follower) # " started following you";
     let notification = createNotification(followedUser, #follow, content, null, null);
     addNotification(notification);
+    switch (shouldSendEmail(followedUser, func(p) { p.follow })) {
+      case (?email) {
+        ignore await EmailClient.sendServiceEmail(
+          "rosedate",
+          [email],
+          "New follower on Rose Dating",
+          content # "\n\nVisit https://rosedate.net to see your profile",
+        );
+      };
+      case null {};
+    };
   };
 
-  func createTradeRequestNotification(requester : Principal, admin : Principal, amount : Float, requestType : Text) {
+  func createTradeRequestNotification(requester : Principal, admin : Principal, amount : Float, requestType : Text) : async () {
     let content = getUsername(requester) # " requested to " # requestType # " " # Float.toText(amount) # " ROSES.";
     let notification = createNotification(admin, #tradeRequest, content, null, null);
     addNotification(notification);
+    switch (shouldSendEmail(admin, func(p) { p.tradeRequest })) {
+      case (?email) {
+        ignore await EmailClient.sendServiceEmail(
+          "rosedate",
+          [email],
+          "New trade request on Rose Dating",
+          content # "\n\nManage trades at https://rosedate.net",
+        );
+      };
+      case null {};
+    };
   };
 
-  func createPostGiftNotification(gifter : Principal, postAuthor : Principal, postId : Text, amount : Float) {
+  func createPostGiftNotification(gifter : Principal, postAuthor : Principal, postId : Text, amount : Float) : async () {
     let gifterUsername = getUsername(gifter);
     let content = gifterUsername # " gifted " # Float.toText(amount) # " ROSES on your post!";
     let notification = createNotification(postAuthor, #postGift, content, ?postId, ?"post");
     addNotification(notification);
+    switch (shouldSendEmail(postAuthor, func(p) { p.postGift })) {
+      case (?email) {
+        ignore await EmailClient.sendServiceEmail(
+          "rosedate",
+          [email],
+          "You received a Rose gift on your post",
+          content # "\n\nView your post at https://rosedate.net",
+        );
+      };
+      case null {};
+    };
   };
 
-  func createStoryViewNotification(viewer : Principal, storyAuthor : Principal, storyId : Nat) {
+  func createStoryViewNotification(viewer : Principal, storyAuthor : Principal, storyId : Nat) : async () {
     let viewerUsername = getUsername(viewer);
     let content = viewerUsername # " viewed your story";
     let notification = createNotification(storyAuthor, #storyView, content, ?storyId.toText(), ?"story");
     addNotification(notification);
+    switch (shouldSendEmail(storyAuthor, func(p) { p.storyView })) {
+      case (?email) {
+        ignore await EmailClient.sendServiceEmail(
+          "rosedate",
+          [email],
+          "Someone viewed your story on Rose Dating",
+          content # "\n\nVisit https://rosedate.net",
+        );
+      };
+      case null {};
+    };
   };
 
-  func createGroupMessageNotification(sender : Principal, receiver : Principal, groupId : Nat, groupName : Text, messageContent : Text) {
+  func createGroupMessageNotification(sender : Principal, receiver : Principal, groupId : Nat, groupName : Text, messageContent : Text) : async () {
     let preview = if (messageContent.size() > 30) {
       messageContent.trim(#char ' ')
     } else {
@@ -3986,12 +4240,34 @@ actor {
     let content = getUsername(sender) # " in " # groupName # ": " # preview;
     let notification = createNotification(receiver, #groupMessage, content, ?groupId.toText(), ?"group");
     addNotification(notification);
+    switch (shouldSendEmail(receiver, func(p) { p.groupMessage })) {
+      case (?email) {
+        ignore await EmailClient.sendServiceEmail(
+          "rosedate",
+          [email],
+          "New group message on Rose Dating",
+          content # "\n\nView the group at https://rosedate.net",
+        );
+      };
+      case null {};
+    };
   };
 
-  func createGroupAddNotification(adder : Principal, addedUser : Principal, groupId : Nat, groupName : Text) {
+  func createGroupAddNotification(adder : Principal, addedUser : Principal, groupId : Nat, groupName : Text) : async () {
     let content = getUsername(adder) # " added you to " # groupName;
     let notification = createNotification(addedUser, #groupAdd, content, ?groupId.toText(), ?"group");
     addNotification(notification);
+    switch (shouldSendEmail(addedUser, func(p) { p.groupAdd })) {
+      case (?email) {
+        ignore await EmailClient.sendServiceEmail(
+          "rosedate",
+          [email],
+          "You were added to a group on Rose Dating",
+          content # "\n\nView the group at https://rosedate.net",
+        );
+      };
+      case null {};
+    };
   };
 
   // ── Message Reactions ────────────────────────────────────────────────────────
@@ -4207,6 +4483,62 @@ actor {
 
     groupMessages.add(groupId, updatedMessages);
     #ok
+  };
+
+  // ── Platform Statistics (public, no auth required) ───────────────────────
+
+  public type PlatformStats = {
+    totalUsers : Nat;
+    totalMessages : Nat;
+    totalPosts : Nat;
+    totalInteractions : Nat;
+  };
+
+  public query func getPlatformStats() : async PlatformStats {
+    let totalUsers = userProfiles.size();
+    let totalPosts = posts.size();
+
+    // Count all direct messages across all conversations
+    var totalMessages = 0;
+    for ((_convId, conv) in conversations.entries()) {
+      totalMessages += conv.messages.size();
+    };
+    // Add group messages
+    for ((_groupId, msgs) in groupMessages.entries()) {
+      totalMessages += msgs.size();
+    };
+
+    // Count likes + comments (post interactions)
+    var totalLikes = 0;
+    for ((_postId, likes) in likesMap.entries()) {
+      totalLikes += likes.size();
+    };
+    var totalComments = 0;
+    for ((_postId, comments) in commentsMap.entries()) {
+      totalComments += comments.size();
+    };
+
+    // Count message reactions across direct conversations
+    var totalReactions = 0;
+    for ((_convId, conv) in conversations.entries()) {
+      for (msg in conv.messages.vals()) {
+        for ((_emoji, reactors) in msg.reactions.vals()) {
+          totalReactions += reactors.size();
+        };
+      };
+    };
+    // Count message reactions across group messages
+    for ((_groupId, msgs) in groupMessages.entries()) {
+      for (msg in msgs.vals()) {
+        for ((_emoji, reactors) in msg.reactions.vals()) {
+          totalReactions += reactors.size();
+        };
+      };
+    };
+
+    let totalInteractions = totalLikes + totalComments + totalReactions;
+
+    { totalUsers; totalMessages; totalPosts; totalInteractions };
   };
 
   // ── Online Status ─────────────────────────────────────────────────────────

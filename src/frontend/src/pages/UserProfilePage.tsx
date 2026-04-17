@@ -62,6 +62,7 @@ import {
   useLikePost,
   useUnblockUser,
   useUnfollowUser,
+  useUnpinStory,
 } from "../hooks/useQueries";
 
 // ─── Embed helpers (mirrors PostsPage.tsx) ────────────────────────────────────
@@ -673,10 +674,18 @@ function HighlightStoryModal({
 // Highlights section — horizontal row of pinned story thumbnails
 const HIGHLIGHTS_PAGE_SIZE = 9;
 
-function HighlightsSection({ userId }: { userId: string }) {
+function HighlightsSection({
+  userId,
+  isOwnProfile,
+}: {
+  userId: string;
+  isOwnProfile: boolean;
+}) {
   const { data: pinnedStories, isLoading } = useGetPinnedStories(userId);
+  const unpinStoryMutation = useUnpinStory();
   const [viewingStory, setViewingStory] = useState<Story | null>(null);
   const [visibleCount, setVisibleCount] = useState(HIGHLIGHTS_PAGE_SIZE);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<bigint | null>(null);
 
   if (isLoading) {
     return (
@@ -711,6 +720,11 @@ function HighlightsSection({ userId }: { userId: string }) {
   const visibleStories = sortedStories.slice(0, visibleCount);
   const hasMore = pinnedStories.length > visibleCount;
 
+  const handleDeleteHighlight = async (storyId: bigint) => {
+    await unpinStoryMutation.mutateAsync(storyId);
+    setConfirmDeleteId(null);
+  };
+
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5">
@@ -728,52 +742,76 @@ function HighlightsSection({ userId }: { userId: string }) {
                 ? story.content.video.getDirectURL()
                 : null;
           const viewCount = story.viewedBy?.length ?? 0;
+          const isConfirming = confirmDeleteId === story.id;
 
           return (
-            <button
+            <div
               key={story.id.toString()}
-              type="button"
-              className="flex flex-col items-center gap-1.5 flex-shrink-0 group"
-              onClick={() => setViewingStory(story)}
-              data-ocid="highlight-thumb"
+              className="flex flex-col items-center gap-1.5 flex-shrink-0 relative"
             >
-              <div className="p-0.5 rounded-full bg-gradient-to-tr from-rose-400 via-pink-500 to-rose-600">
-                <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-background bg-rose-100 flex items-center justify-center group-hover:opacity-90 transition-opacity">
-                  {thumbUrl && story.content.__kind__ === "image" ? (
-                    <img
-                      src={thumbUrl}
-                      alt="Highlight"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : story.content.__kind__ === "video" && thumbUrl ? (
-                    <div className="w-full h-full relative bg-rose-950">
-                      <video
+              {/* Story thumbnail button */}
+              <button
+                type="button"
+                className="flex flex-col items-center group"
+                onClick={() => {
+                  if (!isConfirming) setViewingStory(story);
+                }}
+                data-ocid="highlight-thumb"
+              >
+                <div className="p-0.5 rounded-full bg-gradient-to-tr from-rose-400 via-pink-500 to-rose-600 relative">
+                  <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-background bg-rose-100 flex items-center justify-center group-hover:opacity-90 transition-opacity">
+                    {thumbUrl && story.content.__kind__ === "image" ? (
+                      <img
                         src={thumbUrl}
+                        alt="Highlight"
                         className="w-full h-full object-cover"
-                        muted
-                        playsInline
-                        preload="metadata"
-                        onLoadedMetadata={(e) => {
-                          // Seek to first frame to display a real thumbnail
-                          (e.currentTarget as HTMLVideoElement).currentTime =
-                            0.5;
-                        }}
                       />
-                      <div className="absolute bottom-0.5 right-0.5 bg-black/60 rounded-full p-0.5">
-                        <svg
-                          className="w-2.5 h-2.5 text-white"
-                          fill="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path d="M8 5v14l11-7z" />
-                        </svg>
+                    ) : story.content.__kind__ === "video" && thumbUrl ? (
+                      <div className="w-full h-full relative bg-rose-950">
+                        <video
+                          src={thumbUrl}
+                          className="w-full h-full object-cover"
+                          muted
+                          playsInline
+                          preload="metadata"
+                          onLoadedMetadata={(e) => {
+                            (e.currentTarget as HTMLVideoElement).currentTime =
+                              0.5;
+                          }}
+                        />
+                        <div className="absolute bottom-0.5 right-0.5 bg-black/60 rounded-full p-0.5">
+                          <svg
+                            className="w-2.5 h-2.5 text-white"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <Bookmark className="w-5 h-5 text-rose-400" />
+                    ) : (
+                      <Bookmark className="w-5 h-5 text-rose-400" />
+                    )}
+                  </div>
+
+                  {/* Delete button — always visible on mobile when isOwnProfile */}
+                  {isOwnProfile && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmDeleteId(isConfirming ? null : story.id);
+                      }}
+                      className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 flex items-center justify-center shadow-sm z-10"
+                      aria-label="Delete highlight"
+                      data-ocid="highlight-delete-btn"
+                    >
+                      <Trash2 className="w-2.5 h-2.5 text-white" />
+                    </button>
                   )}
                 </div>
-              </div>
+              </button>
+
               <div className="flex flex-col items-center gap-0.5">
                 <span className="text-xs text-muted-foreground max-w-[60px] truncate">
                   {new Date(
@@ -785,7 +823,34 @@ function HighlightsSection({ userId }: { userId: string }) {
                   {viewCount}
                 </span>
               </div>
-            </button>
+
+              {/* Inline confirm delete */}
+              {isConfirming && (
+                <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 bg-white dark:bg-card border border-red-200 rounded-xl shadow-lg p-2 text-center w-28">
+                  <p className="text-[10px] text-muted-foreground mb-1.5 leading-tight">
+                    Remove highlight?
+                  </p>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteHighlight(story.id)}
+                      disabled={unpinStoryMutation.isPending}
+                      className="flex-1 text-[10px] font-semibold py-1 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50"
+                      data-ocid="highlight-delete-confirm-btn"
+                    >
+                      {unpinStoryMutation.isPending ? "…" : "Yes"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="flex-1 text-[10px] py-1 rounded-lg border border-border hover:bg-muted transition-colors"
+                    >
+                      No
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
@@ -1028,7 +1093,7 @@ export default function UserProfilePage() {
         </div>
 
         {/* Highlights */}
-        <HighlightsSection userId={userId} />
+        <HighlightsSection userId={userId} isOwnProfile={isOwnProfile} />
 
         {/* Posts */}
         <div className="space-y-4">

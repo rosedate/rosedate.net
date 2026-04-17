@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "@tanstack/react-router";
-import { Search } from "lucide-react";
+import { BarChart2, Search } from "lucide-react";
 import { useState } from "react";
 import { useGetUnreadNotificationCount } from "../hooks/useQueries";
 import NotificationPanel from "./NotificationPanel";
@@ -66,6 +66,16 @@ export default function TopNav() {
                 alt="QR Code"
                 className="h-4 w-4 sm:h-5 sm:w-5"
               />
+            </button>
+
+            {/* Analytics Button */}
+            <button
+              onClick={() => navigate({ to: "/analytics" })}
+              className="h-8 w-8 sm:h-10 sm:w-10 flex items-center justify-center rounded-full hover:bg-primary/10 transition-all hover:shadow-rose-glow-sm"
+              title="Analytics"
+              data-ocid="nav-analytics-btn"
+            >
+              <BarChart2 className="h-4 w-4 sm:h-5 sm:w-5 text-foreground/70" />
             </button>
 
             {/* Notification Button */}

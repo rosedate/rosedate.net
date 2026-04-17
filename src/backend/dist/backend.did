@@ -33,10 +33,20 @@ type UserProfile =
    bio: opt text;
    birthYear: opt nat;
    country: text;
+   email: opt text;
+   emailPreferences: opt EmailPreferences;
    gender: opt text;
    name: text;
    profilePicture: opt ExternalBlob;
    username: text;
+ };
+type UserAnalytics = 
+ record {
+   giftsReceived: nat;
+   messageCount: nat;
+   postCount: nat;
+   reactionsReceived: nat;
+   roseBalance: float64;
  };
 type TransformationOutput = 
  record {
@@ -171,6 +181,13 @@ type Post =
    timestamp: Time;
    viewCount: nat;
  };
+type PlatformStats = 
+ record {
+   totalInteractions: nat;
+   totalMessages: nat;
+   totalPosts: nat;
+   totalUsers: nat;
+ };
 type NotificationType = 
  variant {
    comment;
@@ -278,6 +295,21 @@ type GroupChat =
    participants: vec principal;
  };
 type ExternalBlob = blob;
+type EmailPreferences = 
+ record {
+   comment: bool;
+   follow: bool;
+   groupAdd: bool;
+   groupMessage: bool;
+   like: bool;
+   message: bool;
+   postGift: bool;
+   roseGift: bool;
+   roseReceipt: bool;
+   storyView: bool;
+   systemNotice: bool;
+   tradeRequest: bool;
+ };
 type Conversation = 
  record {
    id: nat;
@@ -392,7 +424,17 @@ service : {
                                  }) query;
   getAnalyticsSummary: () -> (AnalyticsSummary) query;
   getBlockedUsers: () -> (vec principal) query;
+  getCallerEmailPreferences: () ->
+   (record {
+      email: opt text;
+      preferences: opt EmailPreferences;
+    }) query;
   getCallerPosts: () -> (vec Post) query;
+  getCallerUserAnalytics: () ->
+   (variant {
+      err: text;
+      ok: UserAnalytics;
+    }) query;
   getCallerUserProfile: () -> (UserProfile) query;
   getCallerUserRole: () -> (UserRole) query;
   getConversations: () -> (vec Conversation) query;
@@ -411,6 +453,7 @@ service : {
   getOnlineUsers: () -> (vec principal) query;
   getPinnedStories: (userId: principal) -> (vec Story) query;
   getPinnedTrendingPost: () -> (opt Post) query;
+  getPlatformStats: () -> (PlatformStats) query;
   getPostComments: (postId: text) -> (vec CommentInteraction) query;
   getPostInteractions: (postId: text) ->
    (record {
@@ -482,6 +525,8 @@ service : {
   removeGroupParticipant: (groupId: nat, participant: principal) -> ();
   requestBuyRoses: (amount: float64) -> (text);
   requestSellRoses: (amount: float64) -> (text);
+  saveCallerEmailPreferences: (email: opt text, preferences:
+   EmailPreferences) -> ();
   saveCallerUserProfile: (profile: UserProfile) -> ();
   savePost: (postId: text) -> ();
   sellRosesToUser: (buyer: principal, amount: float64) -> ();

@@ -65,12 +65,28 @@ export const MessageType = IDL.Variant({
     'postId' : IDL.Text,
   }),
 });
+export const EmailPreferences = IDL.Record({
+  'postGift' : IDL.Bool,
+  'groupMessage' : IDL.Bool,
+  'roseReceipt' : IDL.Bool,
+  'tradeRequest' : IDL.Bool,
+  'systemNotice' : IDL.Bool,
+  'storyView' : IDL.Bool,
+  'like' : IDL.Bool,
+  'comment' : IDL.Bool,
+  'groupAdd' : IDL.Bool,
+  'message' : IDL.Bool,
+  'roseGift' : IDL.Bool,
+  'follow' : IDL.Bool,
+});
 export const UserProfile = IDL.Record({
   'bio' : IDL.Opt(IDL.Text),
   'country' : IDL.Text,
   'username' : IDL.Text,
   'birthYear' : IDL.Opt(IDL.Nat),
   'name' : IDL.Text,
+  'email' : IDL.Opt(IDL.Text),
+  'emailPreferences' : IDL.Opt(EmailPreferences),
   'gender' : IDL.Opt(IDL.Text),
   'profilePicture' : IDL.Opt(ExternalBlob),
 });
@@ -162,6 +178,13 @@ export const Post = IDL.Record({
   'timestamp' : Time,
   'image' : IDL.Opt(ExternalBlob),
 });
+export const UserAnalytics = IDL.Record({
+  'giftsReceived' : IDL.Nat,
+  'postCount' : IDL.Nat,
+  'roseBalance' : IDL.Float64,
+  'reactionsReceived' : IDL.Nat,
+  'messageCount' : IDL.Nat,
+});
 export const Conversation = IDL.Record({
   'id' : IDL.Nat,
   'participants' : IDL.Vec(IDL.Principal),
@@ -216,6 +239,12 @@ export const Notification = IDL.Record({
   'isRead' : IDL.Bool,
   'timestamp' : Time,
   'linkedType' : IDL.Opt(IDL.Text),
+});
+export const PlatformStats = IDL.Record({
+  'totalMessages' : IDL.Nat,
+  'totalUsers' : IDL.Nat,
+  'totalInteractions' : IDL.Nat,
+  'totalPosts' : IDL.Nat,
 });
 export const CommentInteraction = IDL.Record({
   'id' : IDL.Nat,
@@ -404,7 +433,22 @@ export const idlService = IDL.Service({
     ),
   'getAnalyticsSummary' : IDL.Func([], [AnalyticsSummary], ['query']),
   'getBlockedUsers' : IDL.Func([], [IDL.Vec(IDL.Principal)], ['query']),
+  'getCallerEmailPreferences' : IDL.Func(
+      [],
+      [
+        IDL.Record({
+          'email' : IDL.Opt(IDL.Text),
+          'preferences' : IDL.Opt(EmailPreferences),
+        }),
+      ],
+      ['query'],
+    ),
   'getCallerPosts' : IDL.Func([], [IDL.Vec(Post)], ['query']),
+  'getCallerUserAnalytics' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : UserAnalytics, 'err' : IDL.Text })],
+      ['query'],
+    ),
   'getCallerUserProfile' : IDL.Func([], [UserProfile], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getConversations' : IDL.Func([], [IDL.Vec(Conversation)], ['query']),
@@ -428,6 +472,7 @@ export const idlService = IDL.Service({
   'getOnlineUsers' : IDL.Func([], [IDL.Vec(IDL.Principal)], ['query']),
   'getPinnedStories' : IDL.Func([IDL.Principal], [IDL.Vec(Story)], ['query']),
   'getPinnedTrendingPost' : IDL.Func([], [IDL.Opt(Post)], ['query']),
+  'getPlatformStats' : IDL.Func([], [PlatformStats], ['query']),
   'getPostComments' : IDL.Func(
       [IDL.Text],
       [IDL.Vec(CommentInteraction)],
@@ -522,6 +567,11 @@ export const idlService = IDL.Service({
   'removeGroupParticipant' : IDL.Func([IDL.Nat, IDL.Principal], [], []),
   'requestBuyRoses' : IDL.Func([IDL.Float64], [IDL.Text], []),
   'requestSellRoses' : IDL.Func([IDL.Float64], [IDL.Text], []),
+  'saveCallerEmailPreferences' : IDL.Func(
+      [IDL.Opt(IDL.Text), EmailPreferences],
+      [],
+      [],
+    ),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'savePost' : IDL.Func([IDL.Text], [], []),
   'sellRosesToUser' : IDL.Func([IDL.Principal, IDL.Float64], [], []),
@@ -621,12 +671,28 @@ export const idlFactory = ({ IDL }) => {
       'postId' : IDL.Text,
     }),
   });
+  const EmailPreferences = IDL.Record({
+    'postGift' : IDL.Bool,
+    'groupMessage' : IDL.Bool,
+    'roseReceipt' : IDL.Bool,
+    'tradeRequest' : IDL.Bool,
+    'systemNotice' : IDL.Bool,
+    'storyView' : IDL.Bool,
+    'like' : IDL.Bool,
+    'comment' : IDL.Bool,
+    'groupAdd' : IDL.Bool,
+    'message' : IDL.Bool,
+    'roseGift' : IDL.Bool,
+    'follow' : IDL.Bool,
+  });
   const UserProfile = IDL.Record({
     'bio' : IDL.Opt(IDL.Text),
     'country' : IDL.Text,
     'username' : IDL.Text,
     'birthYear' : IDL.Opt(IDL.Nat),
     'name' : IDL.Text,
+    'email' : IDL.Opt(IDL.Text),
+    'emailPreferences' : IDL.Opt(EmailPreferences),
     'gender' : IDL.Opt(IDL.Text),
     'profilePicture' : IDL.Opt(ExternalBlob),
   });
@@ -718,6 +784,13 @@ export const idlFactory = ({ IDL }) => {
     'timestamp' : Time,
     'image' : IDL.Opt(ExternalBlob),
   });
+  const UserAnalytics = IDL.Record({
+    'giftsReceived' : IDL.Nat,
+    'postCount' : IDL.Nat,
+    'roseBalance' : IDL.Float64,
+    'reactionsReceived' : IDL.Nat,
+    'messageCount' : IDL.Nat,
+  });
   const Conversation = IDL.Record({
     'id' : IDL.Nat,
     'participants' : IDL.Vec(IDL.Principal),
@@ -772,6 +845,12 @@ export const idlFactory = ({ IDL }) => {
     'isRead' : IDL.Bool,
     'timestamp' : Time,
     'linkedType' : IDL.Opt(IDL.Text),
+  });
+  const PlatformStats = IDL.Record({
+    'totalMessages' : IDL.Nat,
+    'totalUsers' : IDL.Nat,
+    'totalInteractions' : IDL.Nat,
+    'totalPosts' : IDL.Nat,
   });
   const CommentInteraction = IDL.Record({
     'id' : IDL.Nat,
@@ -957,7 +1036,22 @@ export const idlFactory = ({ IDL }) => {
       ),
     'getAnalyticsSummary' : IDL.Func([], [AnalyticsSummary], ['query']),
     'getBlockedUsers' : IDL.Func([], [IDL.Vec(IDL.Principal)], ['query']),
+    'getCallerEmailPreferences' : IDL.Func(
+        [],
+        [
+          IDL.Record({
+            'email' : IDL.Opt(IDL.Text),
+            'preferences' : IDL.Opt(EmailPreferences),
+          }),
+        ],
+        ['query'],
+      ),
     'getCallerPosts' : IDL.Func([], [IDL.Vec(Post)], ['query']),
+    'getCallerUserAnalytics' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : UserAnalytics, 'err' : IDL.Text })],
+        ['query'],
+      ),
     'getCallerUserProfile' : IDL.Func([], [UserProfile], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getConversations' : IDL.Func([], [IDL.Vec(Conversation)], ['query']),
@@ -985,6 +1079,7 @@ export const idlFactory = ({ IDL }) => {
     'getOnlineUsers' : IDL.Func([], [IDL.Vec(IDL.Principal)], ['query']),
     'getPinnedStories' : IDL.Func([IDL.Principal], [IDL.Vec(Story)], ['query']),
     'getPinnedTrendingPost' : IDL.Func([], [IDL.Opt(Post)], ['query']),
+    'getPlatformStats' : IDL.Func([], [PlatformStats], ['query']),
     'getPostComments' : IDL.Func(
         [IDL.Text],
         [IDL.Vec(CommentInteraction)],
@@ -1079,6 +1174,11 @@ export const idlFactory = ({ IDL }) => {
     'removeGroupParticipant' : IDL.Func([IDL.Nat, IDL.Principal], [], []),
     'requestBuyRoses' : IDL.Func([IDL.Float64], [IDL.Text], []),
     'requestSellRoses' : IDL.Func([IDL.Float64], [IDL.Text], []),
+    'saveCallerEmailPreferences' : IDL.Func(
+        [IDL.Opt(IDL.Text), EmailPreferences],
+        [],
+        [],
+      ),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'savePost' : IDL.Func([IDL.Text], [], []),
     'sellRosesToUser' : IDL.Func([IDL.Principal, IDL.Float64], [], []),
