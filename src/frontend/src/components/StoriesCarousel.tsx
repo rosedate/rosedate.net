@@ -10,6 +10,7 @@ import {
   BookmarkCheck,
   ChevronLeft,
   ChevronRight,
+  Gift,
   Share2,
   X,
 } from "lucide-react";
@@ -23,14 +24,22 @@ import {
   useGetConversations,
   useGetGroupChats,
   useGetPinnedStories,
+  useGetRoseBalance,
+  useGetStoryReactions,
   useGetUserProfile,
+  useGiftRosesOnStory,
   useMarkStoryAsViewed,
   usePinStory,
+  useReactToStory,
   useSendGroupMessage,
   useSendMessage,
   useUnpinStory,
+  useUnreactToStory,
 } from "../hooks/useQueries";
 import { getMimeType } from "../lib/mimeTypes";
+import RoseGiftModal from "./RoseGiftModal";
+
+const REACTION_EMOJIS = ["❤️", "😍", "🌹", "😘", "💋", "🔥", "💯", "😂"];
 
 export default function StoriesCarousel() {
   const { identity } = useInternetIdentity();
@@ -203,81 +212,258 @@ export default function StoriesCarousel() {
       >
         <DialogContent className="max-w-2xl p-0 bg-black/95">
           {selectedStory && (
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute top-2 right-2 z-10 text-white hover:bg-white/20"
-                onClick={() => setSelectedStory(null)}
-              >
-                <X className="h-5 w-5" />
-              </Button>
-
-              <StoryHeader
-                authorId={selectedStory.author.toString()}
-                timestamp={selectedStory.timestamp}
-                onAvatarClick={handleAvatarClick}
-              />
-
-              <div className="min-h-[400px] flex items-center justify-center p-12">
-                {renderStoryContent(selectedStory)}
-              </div>
-
-              <div className="absolute inset-y-0 left-0 flex items-center">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-white hover:bg-white/20 ml-2"
-                  onClick={handlePrevious}
-                  disabled={
-                    currentIndex === 0 &&
-                    authors.indexOf(selectedStory.author.toString()) === 0
-                  }
-                >
-                  <ChevronLeft className="h-6 w-6" />
-                </Button>
-              </div>
-
-              <div className="absolute inset-y-0 right-0 flex items-center">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-white hover:bg-white/20 mr-2"
-                  onClick={handleNext}
-                >
-                  <ChevronRight className="h-6 w-6" />
-                </Button>
-              </div>
-
-              <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1 px-4">
-                {storiesByAuthor[selectedStory.author.toString()].map(
-                  (_, idx) => (
-                    <div
-                      key={idx}
-                      className={`h-1 flex-1 rounded-full ${
-                        idx === currentIndex ? "bg-white" : "bg-white/30"
-                      }`}
-                    />
-                  ),
-                )}
-              </div>
-
-              {/* Story Interactions - Forward only (no gift) */}
-              <StoryInteractions
-                story={selectedStory}
-                isOwnStory={selectedStory.author.toString() === callerPrincipal}
-                isPinned={
-                  ownPinnedStories?.some((s) => s.id === selectedStory.id) ??
-                  false
-                }
-              />
-            </div>
+            <StoryViewer
+              story={selectedStory}
+              currentIndex={currentIndex}
+              storiesByAuthor={storiesByAuthor}
+              authors={authors}
+              callerPrincipal={callerPrincipal}
+              isPinned={
+                ownPinnedStories?.some((s) => s.id === selectedStory.id) ??
+                false
+              }
+              onClose={() => setSelectedStory(null)}
+              onNext={handleNext}
+              onPrevious={handlePrevious}
+              onAvatarClick={handleAvatarClick}
+              renderStoryContent={renderStoryContent}
+            />
           )}
         </DialogContent>
       </Dialog>
     </>
   );
 }
+
+// ── Story Viewer ──────────────────────────────────────────────────────────────
+
+interface StoryViewerProps {
+  story: Story;
+  currentIndex: number;
+  storiesByAuthor: Record<string, Story[]>;
+  authors: string[];
+  callerPrincipal: string;
+  isPinned: boolean;
+  onClose: () => void;
+  onNext: () => void;
+  onPrevious: () => void;
+  onAvatarClick: (authorId: string) => void;
+  renderStoryContent: (story: Story) => React.ReactNode;
+}
+
+function StoryViewer({
+  story,
+  currentIndex,
+  storiesByAuthor,
+  authors,
+  callerPrincipal,
+  isPinned,
+  onClose,
+  onNext,
+  onPrevious,
+  onAvatarClick,
+  renderStoryContent,
+}: StoryViewerProps) {
+  const [showReactionBar, setShowReactionBar] = useState(false);
+  const isOwnStory = story.author.toString() === callerPrincipal;
+
+  const handleContentTap = (e: React.MouseEvent) => {
+    // Don't open reaction bar if clicking on nav buttons or action buttons
+    const target = e.target as HTMLElement;
+    if (target.closest("button") || target.closest("a")) return;
+    setShowReactionBar((prev) => !prev);
+  };
+
+  return (
+    <div className="relative">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute top-2 right-2 z-40 text-white hover:bg-white/20"
+        onClick={onClose}
+        aria-label="Close story"
+        data-ocid="story.close_button"
+      >
+        <X className="h-5 w-5" />
+      </Button>
+
+      <StoryHeader
+        authorId={story.author.toString()}
+        timestamp={story.timestamp}
+        onAvatarClick={onAvatarClick}
+      />
+
+      {/* Tappable story content area */}
+      <div
+        className="min-h-[400px] flex items-center justify-center p-12 cursor-pointer relative"
+        onClick={handleContentTap}
+        data-ocid="story.canvas_target"
+      >
+        {renderStoryContent(story)}
+
+        {/* Caption overlay */}
+        {story.caption && (
+          <div className="absolute bottom-4 left-4 right-4 pointer-events-none">
+            <div className="bg-black/60 backdrop-blur-sm rounded-xl px-4 py-2 text-center">
+              <p className="text-white text-sm font-medium drop-shadow leading-snug">
+                {story.caption}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Reaction bar (shown on tap) */}
+      {showReactionBar && (
+        <StoryReactionBar
+          story={story}
+          callerPrincipal={callerPrincipal}
+          onClose={() => setShowReactionBar(false)}
+        />
+      )}
+
+      {/* Reaction counts */}
+      <StoryReactionCounts storyId={story.id} />
+
+      <div className="absolute inset-y-0 left-0 flex items-center">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-white hover:bg-white/20 ml-2"
+          onClick={onPrevious}
+          disabled={
+            currentIndex === 0 && authors.indexOf(story.author.toString()) === 0
+          }
+        >
+          <ChevronLeft className="h-6 w-6" />
+        </Button>
+      </div>
+
+      <div className="absolute inset-y-0 right-0 flex items-center">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-white hover:bg-white/20 mr-2"
+          onClick={onNext}
+        >
+          <ChevronRight className="h-6 w-6" />
+        </Button>
+      </div>
+
+      <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-1 px-4">
+        {storiesByAuthor[story.author.toString()].map((_, idx) => (
+          <div
+            key={idx}
+            className={`h-1 flex-1 rounded-full ${
+              idx === currentIndex ? "bg-white" : "bg-white/30"
+            }`}
+          />
+        ))}
+      </div>
+
+      {/* Story Interactions */}
+      <StoryInteractions
+        story={story}
+        isOwnStory={isOwnStory}
+        isPinned={isPinned}
+      />
+    </div>
+  );
+}
+
+// ── Reaction Bar ──────────────────────────────────────────────────────────────
+
+function StoryReactionBar({
+  story,
+  callerPrincipal,
+  onClose,
+}: {
+  story: Story;
+  callerPrincipal: string;
+  onClose: () => void;
+}) {
+  const reactToStory = useReactToStory();
+  const unreactToStory = useUnreactToStory();
+  const { data: reactions = [] } = useGetStoryReactions(story.id);
+
+  const myReactions = new Set(
+    reactions
+      .filter(([, principals]) =>
+        principals.some((p) => p.toString() === callerPrincipal),
+      )
+      .map(([emoji]) => emoji),
+  );
+
+  const handleReact = async (emoji: string) => {
+    try {
+      if (myReactions.has(emoji)) {
+        await unreactToStory.mutateAsync({ storyId: story.id, emoji });
+      } else {
+        await reactToStory.mutateAsync({ storyId: story.id, emoji });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to react";
+      toast.error(msg);
+    }
+    onClose();
+  };
+
+  return (
+    <div
+      className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex gap-1 bg-black/80 backdrop-blur-md rounded-full px-3 py-2 shadow-xl border border-white/10">
+        {REACTION_EMOJIS.map((emoji) => (
+          <button
+            key={emoji}
+            type="button"
+            className={`text-xl h-9 w-9 flex items-center justify-center rounded-full transition-all duration-150 hover:scale-125 ${
+              myReactions.has(emoji)
+                ? "bg-rose-500/40 scale-110"
+                : "hover:bg-white/10"
+            }`}
+            onClick={() => handleReact(emoji)}
+            data-ocid="story.reaction_button"
+            title={emoji}
+          >
+            {emoji}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Reaction Counts ───────────────────────────────────────────────────────────
+
+function StoryReactionCounts({ storyId }: { storyId: bigint }) {
+  const { data: reactions = [] } = useGetStoryReactions(storyId);
+
+  const totals = reactions
+    .map(([emoji, principals]) => ({ emoji, count: principals.length }))
+    .filter(({ count }) => count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  if (totals.length === 0) return null;
+
+  return (
+    <div className="flex gap-1.5 justify-center py-1.5 flex-wrap px-4">
+      {totals.map(({ emoji, count }) => (
+        <div
+          key={emoji}
+          className="flex items-center gap-1 bg-white/10 rounded-full px-2.5 py-0.5"
+        >
+          <span className="text-sm">{emoji}</span>
+          <span className="text-white text-xs font-medium">{count}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Video Player ──────────────────────────────────────────────────────────────
 
 function EnhancedVideoPlayer({
   src,
@@ -318,6 +504,8 @@ function EnhancedVideoPlayer({
     />
   );
 }
+
+// ── Story Thumbnail ───────────────────────────────────────────────────────────
 
 function StoryThumbnail({
   authorId,
@@ -364,6 +552,8 @@ function StoryThumbnail({
   );
 }
 
+// ── Story Header ──────────────────────────────────────────────────────────────
+
 function StoryHeader({
   authorId,
   timestamp,
@@ -408,6 +598,8 @@ function StoryHeader({
   );
 }
 
+// ── Story Interactions ────────────────────────────────────────────────────────
+
 function StoryInteractions({
   story,
   isOwnStory,
@@ -418,9 +610,14 @@ function StoryInteractions({
   isPinned: boolean;
 }) {
   const [showForward, setShowForward] = useState(false);
+  const [showGift, setShowGift] = useState(false);
   const [pinPending, setPinPending] = useState(false);
   const pinStory = usePinStory();
   const unpinStory = useUnpinStory();
+  const giftRosesOnStory = useGiftRosesOnStory();
+  const { data: roseBalance = 0 } = useGetRoseBalance();
+
+  const { data: authorProfile } = useGetUserProfile(story.author);
 
   const handlePinToggle = async () => {
     if (pinPending) return;
@@ -441,6 +638,10 @@ function StoryInteractions({
     }
   };
 
+  const handleGift = async (amount: number) => {
+    await giftRosesOnStory.mutateAsync({ storyId: story.id, amount });
+  };
+
   return (
     <>
       <div className="absolute bottom-16 left-0 right-0 px-4 z-10">
@@ -450,9 +651,24 @@ function StoryInteractions({
             size="sm"
             className="gap-2 text-white hover:bg-white/20"
             onClick={() => setShowForward(true)}
+            data-ocid="story.share_button"
           >
             <Share2 className="h-5 w-5" />
           </Button>
+
+          {/* Gift button — hidden for own stories */}
+          {!isOwnStory && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 text-white hover:bg-white/20"
+              onClick={() => setShowGift(true)}
+              data-ocid="story.gift_button"
+              title="Gift Roses"
+            >
+              <Gift className="h-5 w-5 text-rose-300" />
+            </Button>
+          )}
 
           {isOwnStory && (
             <Button
@@ -461,7 +677,7 @@ function StoryInteractions({
               className={`gap-2 text-white hover:bg-white/20 ${isPinned ? "text-rose-300" : ""}`}
               onClick={handlePinToggle}
               disabled={pinPending}
-              data-ocid="story-pin-btn"
+              data-ocid="story.pin_button"
               title={isPinned ? "Unpin from Highlights" : "Pin to Highlights"}
             >
               {isPinned ? (
@@ -481,9 +697,25 @@ function StoryInteractions({
           story={story}
         />
       )}
+
+      {showGift && (
+        <RoseGiftModal
+          open={showGift}
+          onClose={() => setShowGift(false)}
+          onGift={handleGift}
+          recipientName={
+            authorProfile?.username ||
+            authorProfile?.name ||
+            story.author.toString().slice(0, 12)
+          }
+          currentBalance={roseBalance}
+        />
+      )}
     </>
   );
 }
+
+// ── Forward Story Modal ───────────────────────────────────────────────────────
 
 function ForwardStoryModal({
   open,

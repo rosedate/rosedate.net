@@ -10,6 +10,7 @@ import {
   useGetActiveStories,
   useGetConversations,
   useGetGroupChats,
+  useGetUnreadCounts,
 } from "../hooks/useQueries";
 
 const STORIES_PAGE_SIZE = 9;
@@ -27,6 +28,7 @@ export default function ChatsPage() {
     useGetGroupChats();
   const { data: activeStories = [], isLoading: storiesLoading } =
     useGetActiveStories();
+  const { data: unreadCounts } = useGetUnreadCounts();
 
   const [showCreateStory, setShowCreateStory] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -36,6 +38,23 @@ export default function ChatsPage() {
     useState(STORIES_PAGE_SIZE);
   const [visibleGroups, setVisibleGroups] = useState(GROUPS_PAGE_SIZE);
   const [visibleConvos, setVisibleConvos] = useState(CONVOS_PAGE_SIZE);
+
+  // Build lookup maps for unread counts
+  const directUnreadMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of unreadCounts?.direct ?? []) {
+      map.set(item.conversationId.toString(), Number(item.unreadCount));
+    }
+    return map;
+  }, [unreadCounts]);
+
+  const groupUnreadMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of unreadCounts?.groups ?? []) {
+      map.set(item.groupId.toString(), Number(item.unreadCount));
+    }
+    return map;
+  }, [unreadCounts]);
 
   // Group stories by author to count unique story authors
   const storiesByAuthor = React.useMemo(() => {
@@ -96,10 +115,18 @@ export default function ChatsPage() {
     return "Message";
   };
 
-  const hasUnread = (conv: (typeof conversations)[0]) => {
+  const getDirectUnreadCount = (conv: (typeof conversations)[0]) => {
+    // Use backend unread counts if available, otherwise fall back to simple heuristic
+    const backendCount = directUnreadMap.get(conv.id.toString());
+    if (backendCount !== undefined) return backendCount;
+    // Fallback: check if last message sender is not current user
     const last = getLastMessage(conv);
-    if (!last) return false;
-    return last.sender.toString() !== currentPrincipal;
+    if (!last) return 0;
+    return last.sender.toString() !== currentPrincipal ? 1 : 0;
+  };
+
+  const getGroupUnreadCount = (group: (typeof groupChats)[0]) => {
+    return groupUnreadMap.get(group.id.toString()) ?? 0;
   };
 
   const getAvatarUrl = (profile?: {
@@ -210,11 +237,13 @@ export default function ChatsPage() {
             <div className="space-y-1 px-2">
               {sortedConversations.slice(0, visibleConvos).map((conv) => {
                 const lastMsg = getLastMessage(conv);
-                const unread = hasUnread(conv);
+                const unreadCount = getDirectUnreadCount(conv);
+                const hasUnread = unreadCount > 0;
                 const profile = conv.otherParticipantProfile;
                 return (
                   <button
                     key={conv.id.toString()}
+                    data-ocid="chats.direct.item"
                     onClick={() =>
                       navigate({
                         to: "/chats/$conversationId",
@@ -229,15 +258,18 @@ export default function ChatsPage() {
                         alt={profile?.name || "User"}
                         className="w-12 h-12 rounded-full object-cover border-2 border-primary/20"
                       />
-                      {unread && (
-                        <span className="absolute top-0 right-0 w-3 h-3 bg-primary rounded-full border-2 border-background" />
+                      {/* Unread count badge */}
+                      {hasUnread && (
+                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-primary text-primary-foreground rounded-full text-[10px] font-bold flex items-center justify-center px-1 border-2 border-background">
+                          {unreadCount > 9 ? "9+" : unreadCount}
+                        </span>
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <span
                           className={`text-sm truncate ${
-                            unread
+                            hasUnread
                               ? "font-bold text-foreground"
                               : "font-medium text-foreground"
                           }`}
@@ -252,7 +284,7 @@ export default function ChatsPage() {
                       </div>
                       <p
                         className={`text-xs truncate ${
-                          unread
+                          hasUnread
                             ? "text-foreground font-medium"
                             : "text-muted-foreground"
                         }`}
@@ -319,43 +351,57 @@ export default function ChatsPage() {
         ) : (
           <>
             <div className="space-y-1 px-2">
-              {groupChats.slice(0, visibleGroups).map((group) => (
-                <button
-                  key={group.id.toString()}
-                  onClick={() =>
-                    navigate({
-                      to: "/groups/$groupId",
-                      params: { groupId: group.id.toString() },
-                    })
-                  }
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted/60 transition-colors text-left"
-                >
-                  <div className="relative flex-shrink-0">
-                    <img
-                      src={getGroupAvatarUrl(group)}
-                      alt={group.name}
-                      className="w-12 h-12 rounded-full object-cover border-2 border-primary/20"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-sm text-foreground truncate">
-                        {group.name}
-                      </span>
-                      <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">
-                        {group.participants.length} members
-                      </span>
+              {groupChats.slice(0, visibleGroups).map((group) => {
+                const groupUnread = getGroupUnreadCount(group);
+                const hasGroupUnread = groupUnread > 0;
+                return (
+                  <button
+                    key={group.id.toString()}
+                    data-ocid="chats.group.item"
+                    onClick={() =>
+                      navigate({
+                        to: "/groups/$groupId",
+                        params: { groupId: group.id.toString() },
+                      })
+                    }
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted/60 transition-colors text-left"
+                  >
+                    <div className="relative flex-shrink-0">
+                      <img
+                        src={getGroupAvatarUrl(group)}
+                        alt={group.name}
+                        className="w-12 h-12 rounded-full object-cover border-2 border-primary/20"
+                      />
+                      {hasGroupUnread && (
+                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-primary text-primary-foreground rounded-full text-[10px] font-bold flex items-center justify-center px-1 border-2 border-background">
+                          {groupUnread > 9 ? "9+" : groupUnread}
+                        </span>
+                      )}
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {group.admins.some(
-                        (a) => a.toString() === currentPrincipal,
-                      )
-                        ? "👑 Admin"
-                        : "👤 Member"}
-                    </p>
-                  </div>
-                </button>
-              ))}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`text-sm truncate ${hasGroupUnread ? "font-bold text-foreground" : "font-semibold text-foreground"}`}
+                        >
+                          {group.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">
+                          {group.participants.length} members
+                        </span>
+                      </div>
+                      <p
+                        className={`text-xs truncate ${hasGroupUnread ? "text-foreground font-medium" : "text-muted-foreground"}`}
+                      >
+                        {group.admins.some(
+                          (a) => a.toString() === currentPrincipal,
+                        )
+                          ? "👑 Admin"
+                          : "👤 Member"}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
             {groupChats.length > visibleGroups && (
               <div className="flex justify-center mt-2 px-4">

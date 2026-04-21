@@ -131,6 +131,10 @@ export interface GroupChat {
     admins: Array<Principal>;
     avatar?: ExternalBlob;
 }
+export interface UnreadCounts {
+    groups: Array<GroupUnreadCount>;
+    direct: Array<DirectUnreadCount>;
+}
 export interface TransformationInput {
     context: Uint8Array;
     response: http_request_result;
@@ -181,6 +185,12 @@ export interface Story {
     viewCount: bigint;
     viewedBy: Array<Principal>;
     timestamp: Time;
+    caption?: string;
+    reactions: Array<[string, Array<Principal>]>;
+}
+export interface GroupUnreadCount {
+    groupId: bigint;
+    unreadCount: bigint;
 }
 export type MessageType = {
     __kind__: "media";
@@ -286,6 +296,10 @@ export interface ProfileFilter {
     maxAge?: bigint;
     minBalance?: number;
 }
+export interface DirectUnreadCount {
+    conversationId: bigint;
+    unreadCount: bigint;
+}
 export interface Conversation {
     id: bigint;
     participants: Array<Principal>;
@@ -344,7 +358,7 @@ export interface backendInterface {
     createCheckoutSession(items: Array<ShoppingItem>, successUrl: string, cancelUrl: string): Promise<string>;
     createGroupChat(name: string, initialParticipants: Array<Principal>, avatar: ExternalBlob | null): Promise<bigint>;
     createPost(content: string, image: ExternalBlob | null, embed: string | null): Promise<void>;
-    createStory(content: MessageType): Promise<bigint>;
+    createStory(content: MessageType, caption: string | null): Promise<bigint>;
     deleteCallerProfile(): Promise<void>;
     deleteComment(postId: string, commentId: bigint): Promise<void>;
     deleteGroupMessage(groupId: bigint, messageId: bigint): Promise<{
@@ -428,6 +442,7 @@ export interface backendInterface {
     getGroupChats(): Promise<Array<GroupChat>>;
     getGroupDetails(groupId: bigint): Promise<GroupChat>;
     getGroupMessages(groupId: bigint): Promise<Array<GroupMessage>>;
+    getGroupTypingUsers(groupId: bigint): Promise<Array<Principal>>;
     getIcpUsdExchangeRate(): Promise<number>;
     getNotificationCountByType(): Promise<NotificationCount>;
     getNotifications(limit: bigint, offset: bigint): Promise<{
@@ -435,6 +450,14 @@ export interface backendInterface {
         notifications: Array<Notification>;
     }>;
     getOnlineUsers(): Promise<Array<Principal>>;
+    /**
+     * / Returns the pinned message for a direct conversation, or null if none is pinned.
+     */
+    getPinnedConversationMessage(other: Principal): Promise<Message | null>;
+    /**
+     * / Returns the pinned group message, or null if none is pinned.
+     */
+    getPinnedGroupMessage(groupId: bigint): Promise<GroupMessage | null>;
     getPinnedStories(userId: Principal): Promise<Array<Story>>;
     getPinnedTrendingPost(): Promise<Post | null>;
     getPlatformStats(): Promise<PlatformStats>;
@@ -458,8 +481,11 @@ export interface backendInterface {
     }>;
     getRoseTransactionHistory(): Promise<Array<RoseTransaction>>;
     getSavedPosts(): Promise<Array<Post>>;
+    getStoryReactions(storyId: bigint): Promise<Array<[string, Array<Principal>]>>;
     getStripeSessionStatus(sessionId: string): Promise<StripeSessionStatus>;
     getTotalCirculatingRoses(): Promise<number>;
+    getTypingUsers(conversationId: bigint): Promise<Array<Principal>>;
+    getUnreadCounts(): Promise<UnreadCounts>;
     getUnreadNotificationCount(): Promise<bigint>;
     getUserPosts(userId: Principal): Promise<Array<Post>>;
     getUserProfile(arg0: {
@@ -469,6 +495,13 @@ export interface backendInterface {
     getUserStories(userId: Principal): Promise<Array<Story>>;
     giftRoses(receiver: Principal, amount: number): Promise<void>;
     giftRosesOnPost(postId: string, amount: number): Promise<void>;
+    giftRosesOnStory(storyId: bigint, amount: number): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     isCallerAdmin(): Promise<boolean>;
     isFollowing(targetUser: Principal): Promise<boolean>;
     isOnline(userId: Principal): Promise<boolean>;
@@ -478,6 +511,20 @@ export interface backendInterface {
     leaveGroup(groupId: bigint): Promise<void>;
     likePost(postId: string): Promise<void>;
     markAllNotificationsAsRead(): Promise<void>;
+    markConversationRead(conversationId: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    markGroupChatRead(groupId: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     markGroupMessageRead(groupId: bigint, messageId: bigint): Promise<{
         __kind__: "ok";
         ok: null;
@@ -494,6 +541,28 @@ export interface backendInterface {
     }>;
     markNotificationAsRead(notificationId: bigint): Promise<void>;
     markStoryAsViewed(storyId: bigint): Promise<void>;
+    /**
+     * / Pin a message in a direct conversation. Any participant can pin.
+     * / Replaces any previously pinned message.
+     */
+    pinConversationMessage(other: Principal, messageId: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    /**
+     * / Pin a message in a group chat. Only group creator or admins can pin.
+     * / Replaces any previously pinned message.
+     */
+    pinGroupMessage(groupId: bigint, messageId: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     pinPostToTrending(postId: string): Promise<void>;
     pinStory(storyId: bigint): Promise<{
         __kind__: "ok";
@@ -516,6 +585,13 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    reactToStory(storyId: bigint, emoji: string): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     recordPostView(postId: string): Promise<void>;
     removeGroupParticipant(groupId: bigint, participant: Principal): Promise<void>;
     requestBuyRoses(amount: number): Promise<string>;
@@ -526,12 +602,34 @@ export interface backendInterface {
     sellRosesToUser(buyer: Principal, amount: number): Promise<void>;
     sendGroupMessage(groupId: bigint, content: MessageType, replyToId: bigint | null): Promise<void>;
     sendMessage(receiver: Principal, content: MessageType, replyToId: bigint | null): Promise<void>;
+    setGroupTyping(groupId: bigint, isTyping: boolean): Promise<void>;
     setStripeConfiguration(config: StripeConfiguration): Promise<void>;
+    setTyping(conversationId: bigint, isTyping: boolean): Promise<void>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
     unblockUser(userToUnblock: Principal): Promise<void>;
     unfollowUser(targetUser: Principal): Promise<void>;
     universalSearch(searchTerm: string, maxResults: bigint | null): Promise<Array<SearchResult>>;
     unlikePost(postId: string): Promise<void>;
+    /**
+     * / Unpin the currently pinned message in a direct conversation. Any participant can unpin.
+     */
+    unpinConversationMessage(other: Principal): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    /**
+     * / Unpin the currently pinned message in a group chat. Only group creator or admins can unpin.
+     */
+    unpinGroupMessage(groupId: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     unpinStory(storyId: bigint): Promise<{
         __kind__: "ok";
         ok: null;
@@ -540,6 +638,13 @@ export interface backendInterface {
         err: string;
     }>;
     unpinTrendingPost(): Promise<void>;
+    unreactToStory(storyId: bigint, emoji: string): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     unsavePost(postId: string): Promise<void>;
     updateGroupAvatar(groupId: bigint, newAvatar: ExternalBlob | null): Promise<void>;
     updateGroupName(groupId: bigint, newName: string): Promise<void>;

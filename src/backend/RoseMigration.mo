@@ -1,8 +1,9 @@
 // RoseMigration.mo
 // Explicit migration module for upgrading Post and Story stable variables.
 // Handles the addition of embed (?Text) and viewCount (Nat) to Post,
-// and viewCount (Nat) to Story.
+// caption (?Text) and reactions ([(Text, [Principal])]) to Story.
 import Map "mo:core/Map";
+import Array "mo:core/Array";
 import Principal "mo:core/Principal";
 import Text "mo:core/Text";
 import Nat "mo:core/Nat";
@@ -77,7 +78,8 @@ module RoseMigration {
     viewCount : Nat;
   };
 
-  public type Story = {
+  // Story with viewCount only (V2 – no caption/reactions)
+  public type StoryV2 = {
     id : Nat;
     author : Principal;
     content : MessageType;
@@ -87,9 +89,53 @@ module RoseMigration {
     viewCount : Nat;
   };
 
+  // Story with caption and reactions (V3 – current)
+  public type Story = {
+    id : Nat;
+    author : Principal;
+    content : MessageType;
+    timestamp : Time;
+    expiresAt : Time;
+    viewedBy : [Principal];
+    viewCount : Nat;
+    caption : ?Text;
+    reactions : [(Text, [Principal])];
+  };
+
   // ── Migration function ─────────────────────────────────────────────────────
   // Input:  the OLD stable variables that are being replaced
   // Output: the NEW stable variables with migrated data
+
+  // Migrate from StoryV1 (no viewCount) to Story (with caption/reactions)
+  public func migrateStoryV1(old : StoryV1) : Story {
+    {
+      id = old.id;
+      author = old.author;
+      content = old.content;
+      timestamp = old.timestamp;
+      expiresAt = old.expiresAt;
+      viewedBy = old.viewedBy;
+      viewCount = 0;
+      caption = null;
+      reactions = [];
+    }
+  };
+
+  // Migrate from StoryV2 (no caption/reactions) to Story
+  public func migrateStoryV2(old : StoryV2) : Story {
+    {
+      id = old.id;
+      author = old.author;
+      content = old.content;
+      timestamp = old.timestamp;
+      expiresAt = old.expiresAt;
+      viewedBy = old.viewedBy;
+      viewCount = old.viewCount;
+      caption = null;
+      reactions = [];
+    }
+  };
+
   public func migration(
     old : {
       var posts : Map.Map<Text, PostV1>;
@@ -115,19 +161,11 @@ module RoseMigration {
       }
     );
 
-    // Migrate stories: add viewCount = 0
+    // Migrate stories: add viewCount = 0, caption = null, reactions = []
     let migratedStories = Array.map(
       old.stories.entries().toArray(),
       func kv : (Nat, Story) {
-        (kv.0, {
-          id = kv.1.id;
-          author = kv.1.author;
-          content = kv.1.content;
-          timestamp = kv.1.timestamp;
-          expiresAt = kv.1.expiresAt;
-          viewedBy = kv.1.viewedBy;
-          viewCount = 0;
-        })
+        (kv.0, migrateStoryV1(kv.1))
       }
     );
 

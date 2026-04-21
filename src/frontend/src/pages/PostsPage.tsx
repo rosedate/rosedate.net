@@ -28,6 +28,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { CommentInteraction, Post } from "../backend";
 import { ExternalBlob } from "../backend";
+import RoseGiftModal from "../components/RoseGiftModal";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useCommentOnPost,
@@ -41,9 +42,13 @@ import {
   useGetPostInteractions,
   useGetPosts,
   useGetPostsFromFollowedUsers,
+  useGetRoseBalance,
   useGetUserProfile,
+  useGiftRosesOnPost,
   useLikePost,
+  usePinPostToTrending,
   useUnlikePost,
+  useUnpinTrendingPost,
 } from "../hooks/useQueries";
 
 const PAGE_SIZE = 12;
@@ -303,16 +308,22 @@ function CommentAuthorName({ userId }: { userId: string }) {
 function PostInteractionsBar({
   post,
   onComment,
+  isOwner,
 }: {
   post: Post;
   onComment: () => void;
+  isOwner: boolean;
 }) {
   const { data: interactions, isLoading } = useGetPostInteractions(post.id);
   const likePost = useLikePost();
   const unlikePost = useUnlikePost();
+  const giftRosesOnPost = useGiftRosesOnPost();
+  const { data: roseBalance = 0 } = useGetRoseBalance();
   const { identity } = useInternetIdentity();
+  const { data: authorProfile } = useGetUserProfile(post.author.toString());
 
   const [liked, setLiked] = useState(false);
+  const [giftOpen, setGiftOpen] = useState(false);
 
   const handleLike = async () => {
     if (!identity) return;
@@ -325,26 +336,63 @@ function PostInteractionsBar({
     }
   };
 
-  return (
-    <div className="flex items-center gap-4 pt-2 border-t border-border/40">
-      <button
-        onClick={handleLike}
-        className={`flex items-center gap-1.5 text-xs transition-colors ${
-          liked ? "text-rose-500" : "text-muted-foreground hover:text-rose-500"
-        }`}
-      >
-        <Heart className={`w-4 h-4 ${liked ? "fill-rose-500" : ""}`} />
-        <span>{isLoading ? "…" : Number(interactions?.likes ?? 0)}</span>
-      </button>
+  const handleGift = async (amount: number) => {
+    await giftRosesOnPost.mutateAsync({ postId: post.id, amount });
+  };
 
-      <button
-        onClick={onComment}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
-      >
-        <MessageCircle className="w-4 h-4" />
-        <span>{isLoading ? "…" : Number(interactions?.comments ?? 0)}</span>
-      </button>
-    </div>
+  const recipientName =
+    authorProfile?.username ?? authorProfile?.name ?? "this creator";
+
+  return (
+    <>
+      <div className="flex items-center gap-4 pt-2 border-t border-border/40">
+        <button
+          onClick={handleLike}
+          className={`flex items-center gap-1.5 text-xs transition-colors ${
+            liked
+              ? "text-rose-500"
+              : "text-muted-foreground hover:text-rose-500"
+          }`}
+          data-ocid="post.like_button"
+        >
+          <Heart className={`w-4 h-4 ${liked ? "fill-rose-500" : ""}`} />
+          <span>{isLoading ? "…" : Number(interactions?.likes ?? 0)}</span>
+        </button>
+
+        <button
+          onClick={onComment}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
+          data-ocid="post.comment_button"
+        >
+          <MessageCircle className="w-4 h-4" />
+          <span>{isLoading ? "…" : Number(interactions?.comments ?? 0)}</span>
+        </button>
+
+        {!isOwner && (
+          <button
+            onClick={() => setGiftOpen(true)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-rose-500 transition-colors ml-auto"
+            data-ocid="post.gift_button"
+            title="Gift Roses"
+          >
+            <span className="text-base leading-none">🌹</span>
+            {Number(interactions?.totalRosesGifted ?? 0) > 0 && (
+              <span className="text-xs">
+                {Number(interactions?.totalRosesGifted ?? 0).toFixed(0)}
+              </span>
+            )}
+          </button>
+        )}
+      </div>
+
+      <RoseGiftModal
+        open={giftOpen}
+        onClose={() => setGiftOpen(false)}
+        onGift={handleGift}
+        recipientName={recipientName}
+        currentBalance={roseBalance}
+      />
+    </>
   );
 }
 
@@ -454,12 +502,16 @@ function CommentsModal({
 function PostCard({
   post,
   pinned = false,
+  isAdmin = false,
 }: {
   post: Post;
   pinned?: boolean;
+  isAdmin?: boolean;
 }) {
   const { identity } = useInternetIdentity();
   const deletePost = useDeletePost();
+  const pinPost = usePinPostToTrending();
+  const unpinPost = useUnpinTrendingPost();
   const [showComments, setShowComments] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
@@ -475,6 +527,14 @@ function PostCard({
 
   const handleDelete = async () => {
     await deletePost.mutateAsync(post.id);
+  };
+
+  const handlePinPost = async () => {
+    await pinPost.mutateAsync(post.id);
+  };
+
+  const handleUnpinPost = async () => {
+    await unpinPost.mutateAsync();
   };
 
   const handleEdit = async () => {
@@ -510,6 +570,20 @@ function PostCard({
             <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
               <Pin className="w-3 h-3" /> Pinned
             </span>
+          )}
+          {isAdmin && (
+            <button
+              onClick={pinned ? handleUnpinPost : handlePinPost}
+              disabled={pinPost.isPending || unpinPost.isPending}
+              className={`p-1.5 rounded-lg transition-colors ${
+                pinned
+                  ? "text-primary bg-primary/10 hover:bg-primary/20"
+                  : "text-muted-foreground hover:text-primary hover:bg-primary/10"
+              }`}
+              title={pinned ? "Unpin post" : "Pin to top"}
+            >
+              <Pin className="w-3.5 h-3.5" />
+            </button>
           )}
           {isOwner && (
             <>
@@ -590,6 +664,7 @@ function PostCard({
       <PostInteractionsBar
         post={post}
         onComment={() => setShowComments(true)}
+        isOwner={isOwner}
       />
 
       {/* Comments Modal */}
@@ -855,6 +930,9 @@ export default function PostsPage() {
   const { data: followedPosts, isLoading: followedLoading } =
     useGetPostsFromFollowedUsers();
   const { data: pinnedPost } = useGetPinnedTrendingPost();
+  const { data: callerProfile } = useGetCallerUserProfile();
+
+  const isAdmin = callerProfile?.username === "rosalia";
 
   // Sort all posts newest-first
   const sortedAllPosts = [...(allPosts ?? [])].sort(
@@ -895,9 +973,6 @@ export default function PostsPage() {
         {/* Header */}
         <div>
           <h1 className="text-2xl font-bold text-foreground">Posts</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Discover and share with the community
-          </p>
         </div>
 
         {/* Create Post */}
@@ -933,13 +1008,14 @@ export default function PostsPage() {
                     key={`pinned-${pinnedPost.id}`}
                     post={pinnedPost}
                     pinned
+                    isAdmin={isAdmin}
                   />
                 )}
                 {/* Visible posts (excluding pinned if it appears in the list) */}
                 {visibleAllPosts
                   .filter((p) => p.id !== pinnedPost?.id)
                   .map((post) => (
-                    <PostCard key={post.id} post={post} />
+                    <PostCard key={post.id} post={post} isAdmin={isAdmin} />
                   ))}
                 <ViewMoreButton
                   visible={allVisible}

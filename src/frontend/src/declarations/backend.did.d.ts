@@ -39,6 +39,10 @@ export interface Conversation {
   'messages' : Array<Message>,
   'otherParticipantProfile' : [] | [UserProfile],
 }
+export interface DirectUnreadCount {
+  'conversationId' : bigint,
+  'unreadCount' : bigint,
+}
 export interface EmailPreferences {
   'postGift' : boolean,
   'groupMessage' : boolean,
@@ -76,6 +80,7 @@ export interface GroupMessage {
   'reactions' : Array<[string, Array<Principal>]>,
   'readBy' : Array<Principal>,
 }
+export interface GroupUnreadCount { 'groupId' : bigint, 'unreadCount' : bigint }
 export interface Message {
   'id' : bigint,
   'isDeleted' : boolean,
@@ -239,6 +244,8 @@ export interface Story {
   'viewCount' : bigint,
   'viewedBy' : Array<Principal>,
   'timestamp' : Time,
+  'caption' : [] | [string],
+  'reactions' : Array<[string, Array<Principal>]>,
 }
 export interface StripeConfiguration {
   'allowedCountries' : Array<string>,
@@ -264,6 +271,10 @@ export interface TransformationOutput {
   'status' : bigint,
   'body' : Uint8Array,
   'headers' : Array<http_header>,
+}
+export interface UnreadCounts {
+  'groups' : Array<GroupUnreadCount>,
+  'direct' : Array<DirectUnreadCount>,
 }
 export interface UserAnalytics {
   'giftsReceived' : bigint,
@@ -345,7 +356,7 @@ export interface _SERVICE {
     [string, [] | [ExternalBlob], [] | [string]],
     undefined
   >,
-  'createStory' : ActorMethod<[MessageType], bigint>,
+  'createStory' : ActorMethod<[MessageType, [] | [string]], bigint>,
   'deleteCallerProfile' : ActorMethod<[], undefined>,
   'deleteComment' : ActorMethod<[string, bigint], undefined>,
   'deleteGroupMessage' : ActorMethod<
@@ -416,6 +427,7 @@ export interface _SERVICE {
   'getGroupChats' : ActorMethod<[], Array<GroupChat>>,
   'getGroupDetails' : ActorMethod<[bigint], GroupChat>,
   'getGroupMessages' : ActorMethod<[bigint], Array<GroupMessage>>,
+  'getGroupTypingUsers' : ActorMethod<[bigint], Array<Principal>>,
   'getIcpUsdExchangeRate' : ActorMethod<[], number>,
   'getNotificationCountByType' : ActorMethod<[], NotificationCount>,
   'getNotifications' : ActorMethod<
@@ -423,6 +435,14 @@ export interface _SERVICE {
     { 'total' : bigint, 'notifications' : Array<Notification> }
   >,
   'getOnlineUsers' : ActorMethod<[], Array<Principal>>,
+  /**
+   * / Returns the pinned message for a direct conversation, or null if none is pinned.
+   */
+  'getPinnedConversationMessage' : ActorMethod<[Principal], [] | [Message]>,
+  /**
+   * / Returns the pinned group message, or null if none is pinned.
+   */
+  'getPinnedGroupMessage' : ActorMethod<[bigint], [] | [GroupMessage]>,
   'getPinnedStories' : ActorMethod<[Principal], Array<Story>>,
   'getPinnedTrendingPost' : ActorMethod<[], [] | [Post]>,
   'getPlatformStats' : ActorMethod<[], PlatformStats>,
@@ -452,8 +472,14 @@ export interface _SERVICE {
   >,
   'getRoseTransactionHistory' : ActorMethod<[], Array<RoseTransaction>>,
   'getSavedPosts' : ActorMethod<[], Array<Post>>,
+  'getStoryReactions' : ActorMethod<
+    [bigint],
+    Array<[string, Array<Principal>]>
+  >,
   'getStripeSessionStatus' : ActorMethod<[string], StripeSessionStatus>,
   'getTotalCirculatingRoses' : ActorMethod<[], number>,
+  'getTypingUsers' : ActorMethod<[bigint], Array<Principal>>,
+  'getUnreadCounts' : ActorMethod<[], UnreadCounts>,
   'getUnreadNotificationCount' : ActorMethod<[], bigint>,
   'getUserPosts' : ActorMethod<[Principal], Array<Post>>,
   'getUserProfile' : ActorMethod<[{ 'profileId' : Principal }], UserProfile>,
@@ -461,6 +487,11 @@ export interface _SERVICE {
   'getUserStories' : ActorMethod<[Principal], Array<Story>>,
   'giftRoses' : ActorMethod<[Principal, number], undefined>,
   'giftRosesOnPost' : ActorMethod<[string, number], undefined>,
+  'giftRosesOnStory' : ActorMethod<
+    [bigint, number],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'isFollowing' : ActorMethod<[Principal], boolean>,
   'isOnline' : ActorMethod<[Principal], boolean>,
@@ -470,6 +501,16 @@ export interface _SERVICE {
   'leaveGroup' : ActorMethod<[bigint], undefined>,
   'likePost' : ActorMethod<[string], undefined>,
   'markAllNotificationsAsRead' : ActorMethod<[], undefined>,
+  'markConversationRead' : ActorMethod<
+    [bigint],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'markGroupChatRead' : ActorMethod<
+    [bigint],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
   'markGroupMessageRead' : ActorMethod<
     [bigint, bigint],
     { 'ok' : null } |
@@ -482,6 +523,24 @@ export interface _SERVICE {
   >,
   'markNotificationAsRead' : ActorMethod<[bigint], undefined>,
   'markStoryAsViewed' : ActorMethod<[bigint], undefined>,
+  /**
+   * / Pin a message in a direct conversation. Any participant can pin.
+   * / Replaces any previously pinned message.
+   */
+  'pinConversationMessage' : ActorMethod<
+    [Principal, bigint],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  /**
+   * / Pin a message in a group chat. Only group creator or admins can pin.
+   * / Replaces any previously pinned message.
+   */
+  'pinGroupMessage' : ActorMethod<
+    [bigint, bigint],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
   'pinPostToTrending' : ActorMethod<[string], undefined>,
   'pinStory' : ActorMethod<[bigint], { 'ok' : null } | { 'err' : string }>,
   'reactToGroupMessage' : ActorMethod<
@@ -491,6 +550,11 @@ export interface _SERVICE {
   >,
   'reactToMessage' : ActorMethod<
     [Principal, bigint, string],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'reactToStory' : ActorMethod<
+    [bigint, string],
     { 'ok' : null } |
       { 'err' : string }
   >,
@@ -513,14 +577,37 @@ export interface _SERVICE {
     [Principal, MessageType, [] | [bigint]],
     undefined
   >,
+  'setGroupTyping' : ActorMethod<[bigint, boolean], undefined>,
   'setStripeConfiguration' : ActorMethod<[StripeConfiguration], undefined>,
+  'setTyping' : ActorMethod<[bigint, boolean], undefined>,
   'transform' : ActorMethod<[TransformationInput], TransformationOutput>,
   'unblockUser' : ActorMethod<[Principal], undefined>,
   'unfollowUser' : ActorMethod<[Principal], undefined>,
   'universalSearch' : ActorMethod<[string, [] | [bigint]], Array<SearchResult>>,
   'unlikePost' : ActorMethod<[string], undefined>,
+  /**
+   * / Unpin the currently pinned message in a direct conversation. Any participant can unpin.
+   */
+  'unpinConversationMessage' : ActorMethod<
+    [Principal],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  /**
+   * / Unpin the currently pinned message in a group chat. Only group creator or admins can unpin.
+   */
+  'unpinGroupMessage' : ActorMethod<
+    [bigint],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
   'unpinStory' : ActorMethod<[bigint], { 'ok' : null } | { 'err' : string }>,
   'unpinTrendingPost' : ActorMethod<[], undefined>,
+  'unreactToStory' : ActorMethod<
+    [bigint, string],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
   'unsavePost' : ActorMethod<[string], undefined>,
   'updateGroupAvatar' : ActorMethod<[bigint, [] | [ExternalBlob]], undefined>,
   'updateGroupName' : ActorMethod<[bigint, string], undefined>,

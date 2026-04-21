@@ -22,12 +22,13 @@ import {
   CornerUpLeft,
   Crown,
   Edit2,
-  Eye,
   Forward as ForwardIcon,
   Image as ImageIcon,
   LogOut,
   Mic,
   MoreHorizontal,
+  Pin,
+  PinOff,
   Search,
   Send,
   Settings,
@@ -38,7 +39,7 @@ import {
   X,
 } from "lucide-react";
 import type React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { type Conversation, ExternalBlob, type GroupMessage } from "../backend";
 import ExpiredMediaPlaceholder from "../components/ExpiredMediaPlaceholder";
@@ -53,13 +54,18 @@ import {
   useGetConversations,
   useGetGroupDetails,
   useGetGroupMessages,
+  useGetGroupTypingUsers,
   useGetOnlineUsers,
+  useGetPinnedGroupMessage,
   useGetUserProfile,
   useLeaveGroup,
-  useMarkGroupMessageRead,
+  useMarkGroupChatRead,
+  usePinGroupMessage,
   useReactToGroupMessage,
   useRemoveGroupParticipant,
   useSendGroupMessage,
+  useSetGroupTyping,
+  useUnpinGroupMessage,
   useUpdateGroupAvatar,
   useUpdateGroupName,
   useUpdateLastActive,
@@ -69,6 +75,7 @@ import { getMimeType } from "../lib/mimeTypes";
 
 const MEMBERS_PAGE_SIZE = 19;
 const EMOJI_OPTIONS = ["❤️", "😂", "😮", "😢", "😡", "👍"] as const;
+const TYPING_STOP_DELAY = 3000;
 
 // Extended GroupMessage type to handle optional new backend fields
 type ExtendedGroupMessage = GroupMessage & {
@@ -76,6 +83,57 @@ type ExtendedGroupMessage = GroupMessage & {
   readBy?: string[];
   replyToId?: bigint | null;
 };
+
+// Highlight text matching a search term
+function HighlightText({ text, term }: { text: string; term: string }) {
+  if (!term.trim()) return <>{text}</>;
+  const regex = new RegExp(
+    `(${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+    "gi",
+  );
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) =>
+        regex.test(part) ? (
+          <mark
+            key={i}
+            className="bg-yellow-200 text-yellow-900 rounded px-0.5"
+          >
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+// Animated typing dots bubble
+function TypingBubble({ names }: { names: string[] }) {
+  if (names.length === 0) return null;
+  const label =
+    names.length === 1
+      ? `${names[0]} is typing`
+      : `${names.slice(0, 2).join(", ")} are typing`;
+  return (
+    <div className="flex items-center gap-2 px-2 py-1">
+      <div className="bg-muted rounded-2xl rounded-bl-sm px-3 py-2 flex items-center gap-1.5">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="flex gap-0.5">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
+              style={{ animationDelay: `${i * 0.15}s` }}
+            />
+          ))}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 // Emoji reactions overlay
 function EmojiReactionPicker({
@@ -354,17 +412,25 @@ function ForwardGroupMessageModal({
 function GroupMessageActions({
   message,
   isOwn,
+  isAdminUser,
+  isPinned,
   onEdit,
   onDelete,
   onForward,
   onReply,
+  onPin,
+  onUnpin,
 }: {
   message: ExtendedGroupMessage;
   isOwn: boolean;
+  isAdminUser: boolean;
+  isPinned: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onForward: () => void;
   onReply: () => void;
+  onPin: () => void;
+  onUnpin: () => void;
 }) {
   const isText = message.content.__kind__ === "text";
   const isDeleted = message.isDeleted;
@@ -400,6 +466,22 @@ function GroupMessageActions({
             Forward
           </DropdownMenuItem>
         )}
+        {!isDeleted &&
+          isAdminUser &&
+          (isPinned ? (
+            <DropdownMenuItem
+              onClick={onUnpin}
+              className="gap-2 cursor-pointer"
+            >
+              <PinOff className="h-3.5 w-3.5 text-rose-500" />
+              Unpin
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem onClick={onPin} className="gap-2 cursor-pointer">
+              <Pin className="h-3.5 w-3.5 text-rose-500" />
+              Pin
+            </DropdownMenuItem>
+          ))}
         {isOwn && isText && !isDeleted && (
           <DropdownMenuItem onClick={onEdit} className="gap-2 cursor-pointer">
             <Edit2 className="h-3.5 w-3.5 text-blue-500" />
@@ -705,8 +787,14 @@ export default function GroupChatPage() {
   const deleteGroupMessage = useDeleteGroupMessage();
   const forwardGroupMessage = useForwardGroupMessageToConversation();
   const reactToGroupMessage = useReactToGroupMessage();
-  const markGroupMessageRead = useMarkGroupMessageRead();
+  const markGroupChatRead = useMarkGroupChatRead();
+  const setGroupTyping = useSetGroupTyping();
   const updateLastActive = useUpdateLastActive();
+  const pinGroupMessage = usePinGroupMessage();
+  const unpinGroupMessage = useUnpinGroupMessage();
+
+  // Pinned message for this group
+  const { data: pinnedGroupMessage } = useGetPinnedGroupMessage(groupIdBigInt);
 
   const [showSettings, setShowSettings] = useState(false);
   const [messageText, setMessageText] = useState("");
@@ -728,34 +816,49 @@ export default function GroupChatPage() {
     id: bigint;
     snippet: string;
   } | null>(null);
+  // Search state
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoFileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Typing indicator
+  const { data: typingUserPrincipals = [] } =
+    useGetGroupTypingUsers(groupIdBigInt);
+  const typingNames = typingUserPrincipals
+    .filter((p) => p !== currentPrincipal)
+    .map((p) => {
+      for (const conv of conversations) {
+        if (conv.participants.some((cp) => cp.toString() === p)) {
+          return conv.otherParticipantProfile?.name || "Someone";
+        }
+      }
+      return "Someone";
+    })
+    .filter(Boolean);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: messages is the correct dep for scroll-to-bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Mark incoming messages as read when group chat loads
+  // Mark entire group as read on mount and when messages change
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally run only on groupId change
   useEffect(() => {
-    if (!currentPrincipal || messages.length === 0) return;
-    const extMessages = messages as ExtendedGroupMessage[];
-    for (const msg of extMessages) {
-      if (msg.sender.toString() === currentPrincipal) continue;
-      if (msg.isDeleted) continue;
-      const readBy = msg.readBy ?? [];
-      if (!readBy.includes(currentPrincipal)) {
-        markGroupMessageRead.mutate({
-          groupId: groupIdBigInt,
-          messageId: msg.id,
-        });
-      }
-    }
-  }, [groupIdBigInt.toString(), currentPrincipal]);
+    markGroupChatRead.mutate(groupIdBigInt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupIdBigInt.toString()]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally run only when message count changes
+  useEffect(() => {
+    if (messages.length === 0) return;
+    markGroupChatRead.mutate(groupIdBigInt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
 
   // Close emoji picker on outside click
   useEffect(() => {
@@ -784,6 +887,37 @@ export default function GroupChatPage() {
     const interval = setInterval(() => updateLastActive.mutate(), 60000);
     return () => clearInterval(interval);
   }, []);
+
+  // Cleanup typing on unmount
+  const setGroupTypingMutate = setGroupTyping.mutate;
+  const groupIdBigIntRef = useRef(groupIdBigInt);
+  groupIdBigIntRef.current = groupIdBigInt;
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      setGroupTypingMutate({
+        groupId: groupIdBigIntRef.current,
+        isTyping: false,
+      });
+    };
+  }, [setGroupTypingMutate]);
+
+  const handleTypingInput = useCallback(
+    (value: string) => {
+      setMessageText(value);
+      setGroupTypingMutate({ groupId: groupIdBigInt, isTyping: true });
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        setGroupTypingMutate({ groupId: groupIdBigInt, isTyping: false });
+      }, TYPING_STOP_DELAY);
+    },
+    [groupIdBigInt, setGroupTypingMutate],
+  );
+
+  const stopTyping = useCallback(() => {
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    setGroupTypingMutate({ groupId: groupIdBigInt, isTyping: false });
+  }, [groupIdBigInt, setGroupTypingMutate]);
 
   const isAdmin =
     group?.admins.some((a) => a.toString() === currentPrincipal) ?? false;
@@ -860,9 +994,21 @@ export default function GroupChatPage() {
     return orig ? getMessageSnippet(orig) : "Original message";
   };
 
+  // Filtered messages for search mode
+  const allMessages = messages as ExtendedGroupMessage[];
+  const filteredMessages =
+    showSearch && searchTerm.trim()
+      ? allMessages.filter(
+          (m) =>
+            m.content.__kind__ === "text" &&
+            m.content.text.toLowerCase().includes(searchTerm.toLowerCase()),
+        )
+      : allMessages;
+
   const handleSendText = async () => {
     if (!messageText.trim()) return;
     try {
+      stopTyping();
       await sendMessageMutation.mutateAsync({
         groupId: groupIdBigInt,
         content: { __kind__: "text", text: messageText.trim() },
@@ -1077,10 +1223,42 @@ export default function GroupChatPage() {
     }
   };
 
+  const handlePinGroupMessage = async (msg: ExtendedGroupMessage) => {
+    try {
+      await pinGroupMessage.mutateAsync({
+        groupId: groupIdBigInt,
+        messageId: msg.id,
+      });
+      toast.success("Message pinned");
+    } catch {
+      toast.error("Failed to pin message");
+    }
+  };
+
+  const handleUnpinGroupMessage = async () => {
+    try {
+      await unpinGroupMessage.mutateAsync(groupIdBigInt);
+      toast.success("Message unpinned");
+    } catch {
+      toast.error("Failed to unpin message");
+    }
+  };
+
   const renderMessageContent = (
     content: (typeof messages)[0]["content"],
     timestamp: bigint,
+    isText: boolean,
   ) => {
+    if (isText && content.__kind__ === "text")
+      return (
+        <p className="text-sm whitespace-pre-wrap break-words">
+          {showSearch && searchTerm ? (
+            <HighlightText text={content.text} term={searchTerm} />
+          ) : (
+            content.text
+          )}
+        </p>
+      );
     if (content.__kind__ === "text")
       return (
         <p className="text-sm whitespace-pre-wrap break-words">
@@ -1166,36 +1344,127 @@ export default function GroupChatPage() {
   return (
     <div className="flex flex-col h-[100dvh] bg-background">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-background/95 backdrop-blur-sm flex-shrink-0">
-        <button
-          onClick={() => navigate({ to: "/" })}
-          className="p-1 rounded-full hover:bg-muted transition-colors"
-        >
-          <ArrowLeft size={20} className="text-foreground" />
-        </button>
-        <img
-          src={
-            group.avatar?.getDirectURL() ||
-            "/assets/generated/group-avatar-placeholder.dim_200x200.png"
-          }
-          alt={group.name}
-          className="w-9 h-9 rounded-full object-cover border border-primary/20"
-        />
-        <div className="flex-1 min-w-0">
-          <h1 className="font-semibold text-sm text-foreground truncate">
-            {group.name}
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            {group.participants.length} members
-          </p>
+      <div className="flex flex-col px-4 py-3 border-b border-border bg-background/95 backdrop-blur-sm flex-shrink-0 gap-0">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate({ to: "/" })}
+            className="p-1 rounded-full hover:bg-muted transition-colors"
+          >
+            <ArrowLeft size={20} className="text-foreground" />
+          </button>
+          <img
+            src={
+              group.avatar?.getDirectURL() ||
+              "/assets/generated/group-avatar-placeholder.dim_200x200.png"
+            }
+            alt={group.name}
+            className="w-9 h-9 rounded-full object-cover border border-primary/20"
+          />
+          <div className="flex-1 min-w-0">
+            <h1 className="font-semibold text-sm text-foreground truncate">
+              {group.name}
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              {group.participants.length} members
+            </p>
+          </div>
+          {/* Search toggle */}
+          <button
+            onClick={() => {
+              setShowSearch((v) => !v);
+              if (showSearch) setSearchTerm("");
+            }}
+            className="p-2 rounded-full hover:bg-muted transition-colors"
+            aria-label="Search messages"
+            data-ocid="group-msg-search-toggle"
+          >
+            <Search size={18} className="text-foreground" />
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 rounded-full hover:bg-muted transition-colors"
+          >
+            <Settings size={18} className="text-foreground" />
+          </button>
         </div>
-        <button
-          onClick={() => setShowSettings(true)}
-          className="p-2 rounded-full hover:bg-muted transition-colors"
-        >
-          <Settings size={18} className="text-foreground" />
-        </button>
+
+        {/* Inline search bar */}
+        {showSearch && (
+          <div className="mt-2 flex items-center gap-2 bg-muted/60 rounded-full px-3 py-1.5">
+            <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <input
+              // biome-ignore lint/a11y/noAutofocus: intentional UX
+              autoFocus
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search messages..."
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              data-ocid="group-msg-search-input"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Pinned message banner */}
+      {pinnedGroupMessage && !pinnedGroupMessage.isDeleted && (
+        <div
+          className="flex items-center gap-2 px-4 py-2 bg-rose-50 border-b border-rose-100 shrink-0 cursor-pointer"
+          onClick={() => {
+            const el = document.querySelector(
+              `[data-message-id="${pinnedGroupMessage.id.toString()}"]`,
+            );
+            el?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              const el = document.querySelector(
+                `[data-message-id="${pinnedGroupMessage.id.toString()}"]`,
+              );
+              el?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+          }}
+          aria-label="Scroll to pinned message"
+        >
+          <Pin className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+          <p className="text-xs text-rose-700 flex-1 truncate">
+            <span className="font-medium">Pinned: </span>
+            {pinnedGroupMessage.content.__kind__ === "text"
+              ? pinnedGroupMessage.content.text.slice(0, 80)
+              : pinnedGroupMessage.content.__kind__ === "image"
+                ? "📷 Image"
+                : pinnedGroupMessage.content.__kind__ === "video"
+                  ? "🎥 Video"
+                  : pinnedGroupMessage.content.__kind__ === "voice"
+                    ? "🎤 Voice message"
+                    : "Pinned message"}
+          </p>
+          {(isAdmin || isCreator) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleUnpinGroupMessage();
+              }}
+              className="text-rose-500 hover:text-rose-700 text-xs font-medium shrink-0"
+              data-ocid="group.unpin_button"
+            >
+              Unpin
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 pb-4">
@@ -1211,181 +1480,193 @@ export default function GroupChatPage() {
             </p>
           </div>
         ) : (
-          (messages as ExtendedGroupMessage[]).map((msg) => {
-            const isOwn = msg.sender.toString() === currentPrincipal;
-            const isEditing = editingMessageId === msg.id;
-            const reactions = msg.reactions ?? [];
-            const readBy = msg.readBy ?? [];
-            const isSeen =
-              isOwn &&
-              group.participants.some(
-                (p) =>
-                  p.toString() !== currentPrincipal &&
-                  readBy.includes(p.toString()),
-              );
-            const replyToId = msg.replyToId ?? null;
-            const showEmojiPicker = emojiPickerForId === msg.id;
+          <>
+            {showSearch && searchTerm && filteredMessages.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Search className="h-8 w-8 mb-2 opacity-40" />
+                <p className="text-sm">
+                  No messages match &quot;{searchTerm}&quot;
+                </p>
+              </div>
+            )}
+            {filteredMessages.map((msg) => {
+              const isOwn = msg.sender.toString() === currentPrincipal;
+              const isEditing = editingMessageId === msg.id;
+              const reactions = msg.reactions ?? [];
+              const replyToId = msg.replyToId ?? null;
+              const showEmojiPicker = emojiPickerForId === msg.id;
+              const isTextMsg = msg.content.__kind__ === "text";
+              const isThisPinned = pinnedGroupMessage?.id === msg.id;
 
-            return (
-              <div
-                key={msg.id.toString()}
-                className={`flex ${isOwn ? "justify-end" : "justify-start"} gap-2 group`}
-              >
-                {!isOwn && (
-                  <img
-                    src={
-                      msg.senderProfile?.profilePicture?.getDirectURL() ||
-                      "/assets/generated/avatar-placeholder.dim_200x200.png"
-                    }
-                    alt={msg.senderProfile?.name || "User"}
-                    className="w-7 h-7 rounded-full object-cover flex-shrink-0 self-end"
-                  />
-                )}
+              return (
                 <div
-                  className={`max-w-[70%] ${isOwn ? "items-end" : "items-start"} flex flex-col gap-0.5`}
+                  key={msg.id.toString()}
+                  data-message-id={msg.id.toString()}
+                  className={`flex ${isOwn ? "justify-end" : "justify-start"} gap-2 group`}
                 >
                   {!isOwn && (
-                    <span className="text-xs text-muted-foreground px-1">
-                      {msg.senderProfile?.name || "Unknown"}
-                    </span>
+                    <img
+                      src={
+                        msg.senderProfile?.profilePicture?.getDirectURL() ||
+                        "/assets/generated/avatar-placeholder.dim_200x200.png"
+                      }
+                      alt={msg.senderProfile?.name || "User"}
+                      className="w-7 h-7 rounded-full object-cover flex-shrink-0 self-end"
+                    />
                   )}
                   <div
-                    className={`flex items-center gap-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
+                    className={`max-w-[70%] ${isOwn ? "items-end" : "items-start"} flex flex-col gap-0.5`}
                   >
-                    {/* Message bubble with single-tap emoji reaction */}
-                    <div className="relative">
-                      <div
-                        className={`px-3 py-2 rounded-2xl cursor-pointer select-none ${isOwn ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!msg.isDeleted && !isEditing) {
-                            setEmojiPickerForId(
-                              emojiPickerForId === msg.id ? null : msg.id,
-                            );
-                          }
-                        }}
-                      >
-                        {/* Reply quote */}
-                        {replyToId && !msg.isDeleted && (
-                          <ReplyQuoteBlock text={getReplySnippet(replyToId)} />
-                        )}
+                    {!isOwn && (
+                      <span className="text-xs text-muted-foreground px-1">
+                        {msg.senderProfile?.name || "Unknown"}
+                      </span>
+                    )}
+                    <div
+                      className={`flex items-center gap-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
+                    >
+                      {/* Message bubble with single-tap emoji reaction */}
+                      <div className="relative">
+                        <div
+                          className={`px-3 py-2 rounded-2xl cursor-pointer select-none ${isOwn ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!msg.isDeleted && !isEditing) {
+                              setEmojiPickerForId(
+                                emojiPickerForId === msg.id ? null : msg.id,
+                              );
+                            }
+                          }}
+                        >
+                          {/* Reply quote */}
+                          {replyToId && !msg.isDeleted && (
+                            <ReplyQuoteBlock
+                              text={getReplySnippet(replyToId)}
+                            />
+                          )}
 
-                        {msg.isDeleted ? (
-                          <p className="text-sm italic text-muted-foreground">
-                            [Message deleted]
-                          </p>
-                        ) : isEditing ? (
-                          <div className="flex gap-2 min-w-[180px]">
-                            <input
-                              value={editText}
-                              onChange={(e) => setEditText(e.target.value)}
-                              className="flex-1 bg-background/20 border-0 outline-none text-sm text-inherit rounded px-1"
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter")
-                                  handleEditGroupMessage(msg);
-                                if (e.key === "Escape") {
+                          {msg.isDeleted ? (
+                            <p className="text-sm italic text-muted-foreground">
+                              [Message deleted]
+                            </p>
+                          ) : isEditing ? (
+                            <div className="flex gap-2 min-w-[180px]">
+                              <input
+                                value={editText}
+                                onChange={(e) => setEditText(e.target.value)}
+                                className="flex-1 bg-background/20 border-0 outline-none text-sm text-inherit rounded px-1"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter")
+                                    handleEditGroupMessage(msg);
+                                  if (e.key === "Escape") {
+                                    setEditingMessageId(null);
+                                    setEditText("");
+                                  }
+                                }}
+                                data-ocid="group-msg-edit-input"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleEditGroupMessage(msg)}
+                                className="text-green-400 hover:text-green-300"
+                              >
+                                <Check className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
                                   setEditingMessageId(null);
                                   setEditText("");
-                                }
-                              }}
-                              data-ocid="group-msg-edit-input"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleEditGroupMessage(msg)}
-                              className="text-green-400 hover:text-green-300"
-                            >
-                              <Check className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingMessageId(null);
-                                setEditText("");
-                              }}
-                              className="text-muted-foreground/70 hover:text-muted-foreground"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          renderMessageContent(msg.content, msg.timestamp)
+                                }}
+                                className="text-muted-foreground/70 hover:text-muted-foreground"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            renderMessageContent(
+                              msg.content,
+                              msg.timestamp,
+                              isTextMsg,
+                            )
+                          )}
+                        </div>
+
+                        {/* Emoji picker overlay */}
+                        {showEmojiPicker && !msg.isDeleted && (
+                          <EmojiReactionPicker
+                            isOwn={isOwn}
+                            onSelect={(emoji) =>
+                              handleReactToGroupMessage(msg, emoji)
+                            }
+                            onClose={() => setEmojiPickerForId(null)}
+                          />
                         )}
                       </div>
 
-                      {/* Emoji picker overlay */}
-                      {showEmojiPicker && !msg.isDeleted && (
-                        <EmojiReactionPicker
-                          isOwn={isOwn}
-                          onSelect={(emoji) =>
-                            handleReactToGroupMessage(msg, emoji)
-                          }
-                          onClose={() => setEmojiPickerForId(null)}
-                        />
+                      {!msg.isDeleted && (
+                        <div className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                          <GroupMessageActions
+                            message={msg}
+                            isOwn={isOwn}
+                            isAdminUser={isAdmin || isCreator}
+                            isPinned={isThisPinned}
+                            onEdit={() => {
+                              setEditingMessageId(msg.id);
+                              setEditText(
+                                msg.content.__kind__ === "text"
+                                  ? msg.content.text
+                                  : "",
+                              );
+                            }}
+                            onDelete={() => handleDeleteGroupMessage(msg)}
+                            onForward={() => setForwardingMessage(msg)}
+                            onReply={() =>
+                              setReplyTo({
+                                id: msg.id,
+                                snippet: getMessageSnippet(msg),
+                              })
+                            }
+                            onPin={() => handlePinGroupMessage(msg)}
+                            onUnpin={handleUnpinGroupMessage}
+                          />
+                        </div>
                       )}
                     </div>
 
-                    {!msg.isDeleted && (
-                      <div className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                        <GroupMessageActions
-                          message={msg}
-                          isOwn={isOwn}
-                          onEdit={() => {
-                            setEditingMessageId(msg.id);
-                            setEditText(
-                              msg.content.__kind__ === "text"
-                                ? msg.content.text
-                                : "",
-                            );
-                          }}
-                          onDelete={() => handleDeleteGroupMessage(msg)}
-                          onForward={() => setForwardingMessage(msg)}
-                          onReply={() =>
-                            setReplyTo({
-                              id: msg.id,
-                              snippet: getMessageSnippet(msg),
-                            })
-                          }
-                        />
-                      </div>
+                    {/* Reactions */}
+                    {reactions.length > 0 && (
+                      <ReactionBadges reactions={reactions} />
                     )}
-                  </div>
 
-                  {/* Reactions */}
-                  {reactions.length > 0 && (
-                    <ReactionBadges reactions={reactions} />
-                  )}
-
-                  <div
-                    className={`flex items-center gap-1.5 px-1 ${isOwn ? "justify-end" : "justify-start"}`}
-                  >
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(
-                        Number(msg.timestamp) / 1_000_000,
-                      ).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                    {msg.isEdited && !msg.isDeleted && (
-                      <span className="text-xs text-muted-foreground italic">
-                        (edited)
+                    <div
+                      className={`flex items-center gap-1.5 px-1 ${isOwn ? "justify-end" : "justify-start"}`}
+                    >
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(
+                          Number(msg.timestamp) / 1_000_000,
+                        ).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </span>
-                    )}
-                    {/* Read receipt */}
-                    {isSeen && (
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                        <Eye className="h-2.5 w-2.5" />
-                        Seen
-                      </span>
-                    )}
+                      {msg.isEdited && !msg.isDeleted && (
+                        <span className="text-xs text-muted-foreground italic">
+                          (edited)
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })
+              );
+            })}
+
+            {/* Typing indicator */}
+            {typingNames.length > 0 && <TypingBubble names={typingNames} />}
+
+            <div ref={messagesEndRef} />
+          </>
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Message Input */}
@@ -1438,7 +1719,7 @@ export default function GroupChatPage() {
           <input
             type="text"
             value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
+            onChange={(e) => handleTypingInput(e.target.value)}
             onKeyDown={(e) =>
               e.key === "Enter" && !e.shiftKey && handleSendText()
             }

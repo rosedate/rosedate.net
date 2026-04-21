@@ -1,27 +1,26 @@
 {
-  "overview": "Rose Dating is a romantic social dating app on the Internet Computer featuring profiles, posts, stories, direct and group chats, a tokenized in-app Rose Credits economy, and real-time notifications. Users can connect, share media, gift roses, and trade ICP seamlessly in an elegant rose-themed interface.",
+  "overview": "Rose Dating is a romantic social dating app on the Internet Computer. It features user profiles, stories, posts, direct and group chats, a tokenized Rose Credits economy, and rich social interactions including reactions, gifting, and media sharing.",
   "features": [
-    "User profiles with avatars and bios",
-    "Posts and story highlights with media support",
-    "Direct and group chats with real-time updates",
-    "Rose Credits in-app economy with ICP trading",
-    "Email notification settings with per-event toggles",
-    "Notification panel with pagination",
-    "Online status indicators",
-    "Message reactions and read receipts",
-    "Analytics dashboard for platform and personal stats",
-    "QR code system for direct chat sharing"
+    "Story reactions with emoji",
+    "Story captions as text overlays",
+    "Rose gifting on stories",
+    "Rose gifting on posts (feed and profile)",
+    "Real-time chat with reactions",
+    "Rose Credits economy (1 Rose = 1 ICP)",
+    "QR code chat sharing",
+    "PWA support",
+    "Email notifications"
   ],
   "category": "social",
   "tags": [
     "dating",
     "social",
+    "stories",
     "chat",
-    "icp",
+    "crypto",
     "rose-credits",
-    "notifications",
-    "email",
+    "icp",
     "pwa"
   ],
-  "last_updated": "2026-04-17T03:51:23.986Z"
+  "last_updated": "2026-04-21T00:41:54.443Z"
 }

@@ -48,6 +48,11 @@ type UserAnalytics =
    reactionsReceived: nat;
    roseBalance: float64;
  };
+type UnreadCounts = 
+ record {
+   direct: vec DirectUnreadCount;
+   groups: vec GroupUnreadCount;
+ };
 type TransformationOutput = 
  record {
    body: blob;
@@ -84,9 +89,14 @@ type StripeConfiguration =
 type Story = 
  record {
    author: principal;
+   caption: opt text;
    content: MessageType;
    expiresAt: Time;
    id: nat;
+   reactions: vec record {
+                    text;
+                    vec principal;
+                  };
    timestamp: Time;
    viewCount: nat;
    viewedBy: vec principal;
@@ -267,6 +277,11 @@ type Message =
    senderProfile: opt UserProfile;
    timestamp: Time;
  };
+type GroupUnreadCount = 
+ record {
+   groupId: nat;
+   unreadCount: nat;
+ };
 type GroupMessage = 
  record {
    content: MessageType;
@@ -309,6 +324,11 @@ type EmailPreferences =
    storyView: bool;
    systemNotice: bool;
    tradeRequest: bool;
+ };
+type DirectUnreadCount = 
+ record {
+   conversationId: nat;
+   unreadCount: nat;
  };
 type Conversation = 
  record {
@@ -370,7 +390,7 @@ service : {
   createGroupChat: (name: text, initialParticipants: vec principal, avatar:
    opt ExternalBlob) -> (nat);
   createPost: (content: text, image: opt ExternalBlob, embed: opt text) -> ();
-  createStory: (content: MessageType) -> (nat);
+  createStory: (content: MessageType, caption: opt text) -> (nat);
   deleteCallerProfile: () -> ();
   deleteComment: (postId: text, commentId: nat) -> ();
   deleteGroupMessage: (groupId: nat, messageId: nat) ->
@@ -443,6 +463,7 @@ service : {
   getGroupChats: () -> (vec GroupChat) query;
   getGroupDetails: (groupId: nat) -> (GroupChat) query;
   getGroupMessages: (groupId: nat) -> (vec GroupMessage) query;
+  getGroupTypingUsers: (groupId: nat) -> (vec principal) query;
   getIcpUsdExchangeRate: () -> (float64);
   getNotificationCountByType: () -> (NotificationCount) query;
   getNotifications: (limit: nat, offset: nat) ->
@@ -451,6 +472,10 @@ service : {
       total: nat;
     }) query;
   getOnlineUsers: () -> (vec principal) query;
+  /// Returns the pinned message for a direct conversation, or null if none is pinned.
+  getPinnedConversationMessage: (other: principal) -> (opt Message) query;
+  /// Returns the pinned group message, or null if none is pinned.
+  getPinnedGroupMessage: (groupId: nat) -> (opt GroupMessage) query;
   getPinnedStories: (userId: principal) -> (vec Story) query;
   getPinnedTrendingPost: () -> (opt Post) query;
   getPlatformStats: () -> (PlatformStats) query;
@@ -476,8 +501,15 @@ service : {
     }) query;
   getRoseTransactionHistory: () -> (vec RoseTransaction) query;
   getSavedPosts: () -> (vec Post) query;
+  getStoryReactions: (storyId: nat) ->
+   (vec record {
+          text;
+          vec principal;
+        }) query;
   getStripeSessionStatus: (sessionId: text) -> (StripeSessionStatus);
   getTotalCirculatingRoses: () -> (float64) query;
+  getTypingUsers: (conversationId: nat) -> (vec principal) query;
+  getUnreadCounts: () -> (UnreadCounts) query;
   getUnreadNotificationCount: () -> (nat) query;
   getUserPosts: (userId: principal) -> (vec Post) query;
   getUserProfile: (record {profileId: principal;}) -> (UserProfile) query;
@@ -485,6 +517,11 @@ service : {
   getUserStories: (userId: principal) -> (vec Story) query;
   giftRoses: (receiver: principal, amount: float64) -> ();
   giftRosesOnPost: (postId: text, amount: float64) -> ();
+  giftRosesOnStory: (storyId: nat, amount: float64) ->
+   (variant {
+      err: text;
+      ok;
+    });
   isCallerAdmin: () -> (bool) query;
   isFollowing: (targetUser: principal) -> (bool) query;
   isOnline: (userId: principal) -> (bool) query;
@@ -494,6 +531,14 @@ service : {
   leaveGroup: (groupId: nat) -> ();
   likePost: (postId: text) -> ();
   markAllNotificationsAsRead: () -> ();
+  markConversationRead: (conversationId: nat) -> (variant {
+                                                    err: text;
+                                                    ok;
+                                                  });
+  markGroupChatRead: (groupId: nat) -> (variant {
+                                          err: text;
+                                          ok;
+                                        });
   markGroupMessageRead: (groupId: nat, messageId: nat) ->
    (variant {
       err: text;
@@ -506,6 +551,20 @@ service : {
     });
   markNotificationAsRead: (notificationId: nat) -> ();
   markStoryAsViewed: (storyId: nat) -> ();
+  /// Pin a message in a direct conversation. Any participant can pin.
+  /// Replaces any previously pinned message.
+  pinConversationMessage: (other: principal, messageId: nat) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  /// Pin a message in a group chat. Only group creator or admins can pin.
+  /// Replaces any previously pinned message.
+  pinGroupMessage: (groupId: nat, messageId: nat) ->
+   (variant {
+      err: text;
+      ok;
+    });
   pinPostToTrending: (postId: text) -> ();
   pinStory: (storyId: nat) -> (variant {
                                  err: text;
@@ -521,6 +580,10 @@ service : {
       err: text;
       ok;
     });
+  reactToStory: (storyId: nat, emoji: text) -> (variant {
+                                                  err: text;
+                                                  ok;
+                                                });
   recordPostView: (postId: text) -> ();
   removeGroupParticipant: (groupId: nat, participant: principal) -> ();
   requestBuyRoses: (amount: float64) -> (text);
@@ -534,18 +597,34 @@ service : {
    opt nat) -> ();
   sendMessage: (receiver: principal, content: MessageType, replyToId:
    opt nat) -> ();
+  setGroupTyping: (groupId: nat, isTyping: bool) -> ();
   setStripeConfiguration: (config: StripeConfiguration) -> ();
+  setTyping: (conversationId: nat, isTyping: bool) -> ();
   transform: (input: TransformationInput) -> (TransformationOutput) query;
   unblockUser: (userToUnblock: principal) -> ();
   unfollowUser: (targetUser: principal) -> ();
   universalSearch: (searchTerm: text, maxResults: opt nat) ->
    (vec SearchResult) query;
   unlikePost: (postId: text) -> ();
+  /// Unpin the currently pinned message in a direct conversation. Any participant can unpin.
+  unpinConversationMessage: (other: principal) -> (variant {
+                                                     err: text;
+                                                     ok;
+                                                   });
+  /// Unpin the currently pinned message in a group chat. Only group creator or admins can unpin.
+  unpinGroupMessage: (groupId: nat) -> (variant {
+                                          err: text;
+                                          ok;
+                                        });
   unpinStory: (storyId: nat) -> (variant {
                                    err: text;
                                    ok;
                                  });
   unpinTrendingPost: () -> ();
+  unreactToStory: (storyId: nat, emoji: text) -> (variant {
+                                                    err: text;
+                                                    ok;
+                                                  });
   unsavePost: (postId: text) -> ();
   updateGroupAvatar: (groupId: nat, newAvatar: opt ExternalBlob) -> ();
   updateGroupName: (groupId: nat, newName: text) -> ();

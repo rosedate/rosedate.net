@@ -14,6 +14,7 @@ import type {
   RoseTransaction,
   SearchResult,
   Story,
+  UnreadCounts,
   UserAnalytics,
   UserProfile,
 } from "../backend";
@@ -656,6 +657,7 @@ export function useSendMessage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
     },
   });
 }
@@ -802,6 +804,140 @@ export function useMarkMessageRead() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     },
+  });
+}
+
+// New: mark entire conversation as read (more efficient than per-message)
+export function useMarkConversationRead() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (conversationId: bigint) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.markConversationRead(conversationId);
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
+    },
+  });
+}
+
+// New: mark entire group chat as read
+export function useMarkGroupChatRead() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (groupId: bigint) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.markGroupChatRead(groupId);
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSuccess: (_, groupId) => {
+      queryClient.invalidateQueries({
+        queryKey: ["groupMessages", groupId.toString()],
+      });
+      queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
+    },
+  });
+}
+
+// New: get unread counts for all conversations and groups (polls every 10s)
+export function useGetUnreadCounts() {
+  const { actor } = useActor();
+
+  return useQuery<UnreadCounts>({
+    queryKey: ["unreadCounts"],
+    queryFn: async () => {
+      if (!actor) return { direct: [], groups: [] };
+      try {
+        return await actor.getUnreadCounts();
+      } catch {
+        return { direct: [], groups: [] };
+      }
+    },
+    enabled: !!actor,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+// New: typing indicator hooks for direct chats
+export function useSetTyping() {
+  const { actor } = useActor();
+
+  return useMutation({
+    mutationFn: async ({
+      conversationId,
+      isTyping,
+    }: { conversationId: bigint; isTyping: boolean }) => {
+      if (!actor) return;
+      try {
+        await actor.setTyping(conversationId, isTyping);
+      } catch {
+        // Silent fail — typing indicator is best-effort
+      }
+    },
+  });
+}
+
+export function useGetTypingUsers(conversationId: bigint | null) {
+  const { actor } = useActor();
+
+  return useQuery<string[]>({
+    queryKey: ["typingUsers", conversationId?.toString()],
+    queryFn: async () => {
+      if (!actor || conversationId === null) return [];
+      try {
+        const principals = await actor.getTypingUsers(conversationId);
+        return principals.map((p) => p.toString());
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && conversationId !== null,
+    refetchInterval: 3000,
+  });
+}
+
+// New: typing indicator hooks for group chats
+export function useSetGroupTyping() {
+  const { actor } = useActor();
+
+  return useMutation({
+    mutationFn: async ({
+      groupId,
+      isTyping,
+    }: { groupId: bigint; isTyping: boolean }) => {
+      if (!actor) return;
+      try {
+        await actor.setGroupTyping(groupId, isTyping);
+      } catch {
+        // Silent fail — typing indicator is best-effort
+      }
+    },
+  });
+}
+
+export function useGetGroupTypingUsers(groupId: bigint | null) {
+  const { actor } = useActor();
+
+  return useQuery<string[]>({
+    queryKey: ["groupTypingUsers", groupId?.toString()],
+    queryFn: async () => {
+      if (!actor || groupId === null) return [];
+      try {
+        const principals = await actor.getGroupTypingUsers(groupId);
+        return principals.map((p) => p.toString());
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && groupId !== null,
+    refetchInterval: 3000,
   });
 }
 
@@ -1004,6 +1140,7 @@ export function useSendGroupMessage() {
       queryClient.invalidateQueries({
         queryKey: ["groupMessages", groupId.toString()],
       });
+      queryClient.invalidateQueries({ queryKey: ["unreadCounts"] });
     },
   });
 }
@@ -1140,9 +1277,12 @@ export function useCreateStory() {
 
   return useMutation({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mutationFn: async (content: any) => {
+    mutationFn: async ({
+      content,
+      caption,
+    }: { content: any; caption?: string | null }) => {
       if (!actor) throw new Error("Actor not available");
-      return actor.createStory(content);
+      return actor.createStory(content, caption ?? null);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["activeStories"] });
@@ -1208,6 +1348,82 @@ export function useGetPinnedStories(userId: Principal | string | null) {
       return actor.getPinnedStories(toPrincipal(userId));
     },
     enabled: !!actor && !!userId,
+  });
+}
+
+export function useReactToStory() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      storyId,
+      emoji,
+    }: { storyId: bigint; emoji: string }) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.reactToStory(storyId, emoji);
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSuccess: (_, { storyId }) => {
+      queryClient.invalidateQueries({
+        queryKey: ["storyReactions", storyId.toString()],
+      });
+    },
+  });
+}
+
+export function useUnreactToStory() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      storyId,
+      emoji,
+    }: { storyId: bigint; emoji: string }) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.unreactToStory(storyId, emoji);
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSuccess: (_, { storyId }) => {
+      queryClient.invalidateQueries({
+        queryKey: ["storyReactions", storyId.toString()],
+      });
+    },
+  });
+}
+
+export function useGetStoryReactions(storyId: bigint | null) {
+  const { actor } = useActor();
+
+  return useQuery<Array<[string, Array<Principal>]>>({
+    queryKey: ["storyReactions", storyId?.toString()],
+    queryFn: async () => {
+      if (!actor || storyId === null) return [];
+      return actor.getStoryReactions(storyId);
+    },
+    enabled: !!actor && storyId !== null,
+    refetchInterval: 10000,
+  });
+}
+
+export function useGiftRosesOnStory() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      storyId,
+      amount,
+    }: { storyId: bigint; amount: number }) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.giftRosesOnStory(storyId, amount);
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["roseBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["roseTransactions"] });
+    },
   });
 }
 
@@ -1668,6 +1884,120 @@ export function useAdminDeleteUser() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allUserProfiles"] });
+    },
+  });
+}
+
+// ── Pinned Conversation Message Hooks ────────────────────────────────────────
+export function useGetPinnedConversationMessage(
+  otherPrincipal: Principal | string | null,
+) {
+  const { actor } = useActor();
+  const otherStr = otherPrincipal ? toPrincipal(otherPrincipal).toText() : null;
+
+  return useQuery({
+    queryKey: ["pinnedConversationMessage", otherStr],
+    queryFn: async () => {
+      if (!actor || !otherPrincipal) return null;
+      return actor.getPinnedConversationMessage(toPrincipal(otherPrincipal));
+    },
+    enabled: !!actor && !!otherPrincipal,
+    refetchInterval: 15000,
+  });
+}
+
+export function usePinConversationMessage() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      other,
+      messageId,
+    }: { other: Principal | string; messageId: bigint }) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.pinConversationMessage(
+        toPrincipal(other),
+        messageId,
+      );
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSuccess: (_, { other }) => {
+      queryClient.invalidateQueries({
+        queryKey: ["pinnedConversationMessage", toPrincipal(other).toText()],
+      });
+    },
+  });
+}
+
+export function useUnpinConversationMessage() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (other: Principal | string) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.unpinConversationMessage(toPrincipal(other));
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSuccess: (_, other) => {
+      queryClient.invalidateQueries({
+        queryKey: ["pinnedConversationMessage", toPrincipal(other).toText()],
+      });
+    },
+  });
+}
+
+// ── Pinned Group Message Hooks ────────────────────────────────────────────────
+export function useGetPinnedGroupMessage(groupId: bigint | null) {
+  const { actor } = useActor();
+
+  return useQuery({
+    queryKey: ["pinnedGroupMessage", groupId?.toString()],
+    queryFn: async () => {
+      if (!actor || groupId === null) return null;
+      return actor.getPinnedGroupMessage(groupId);
+    },
+    enabled: !!actor && groupId !== null,
+    refetchInterval: 15000,
+  });
+}
+
+export function usePinGroupMessage() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      groupId,
+      messageId,
+    }: { groupId: bigint; messageId: bigint }) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.pinGroupMessage(groupId, messageId);
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSuccess: (_, { groupId }) => {
+      queryClient.invalidateQueries({
+        queryKey: ["pinnedGroupMessage", groupId.toString()],
+      });
+    },
+  });
+}
+
+export function useUnpinGroupMessage() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (groupId: bigint) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.unpinGroupMessage(groupId);
+      if (result.__kind__ === "err") throw new Error(result.err);
+    },
+    onSuccess: (_, groupId) => {
+      queryClient.invalidateQueries({
+        queryKey: ["pinnedGroupMessage", groupId.toString()],
+      });
     },
   });
 }

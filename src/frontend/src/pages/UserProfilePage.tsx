@@ -38,6 +38,7 @@ import React, {
   useMemo,
 } from "react";
 import type { CommentInteraction, Post, Story } from "../backend";
+import RoseGiftModal from "../components/RoseGiftModal";
 import { getMimeType } from "../lib/mimeTypes";
 
 const POSTS_PAGE_SIZE = 9;
@@ -55,8 +56,10 @@ import {
   useGetPinnedStories,
   useGetPostComments,
   useGetPostInteractions,
+  useGetRoseBalance,
   useGetUserPosts,
   useGetUserProfile,
+  useGiftRosesOnPost,
   useIsFollowing,
   useIsUserBlocked,
   useLikePost,
@@ -338,8 +341,12 @@ function PostCard({
   const likePostMutation = useLikePost();
   const deletePostMutation = useDeletePost();
   const editPostMutation = useEditPost();
+  const giftRosesOnPost = useGiftRosesOnPost();
+  const { data: roseBalance = 0 } = useGetRoseBalance();
+  const { data: authorProfile } = useGetUserProfile(post.author.toString());
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
+  const [giftOpen, setGiftOpen] = useState(false);
   const imageUrl = post.image ? post.image.getDirectURL() : null;
 
   // Parse embed from post content
@@ -368,8 +375,15 @@ function PostCard({
     setEditMode(false);
   };
 
+  const handleGift = async (amount: number) => {
+    await giftRosesOnPost.mutateAsync({ postId: post.id, amount });
+  };
+
+  const recipientName =
+    authorProfile?.username ?? authorProfile?.name ?? "this creator";
+
   return (
-    <div className="bg-white dark:bg-card rounded-2xl shadow-sm border border-rose-100 overflow-hidden">
+    <div className="bg-card rounded-2xl shadow-sm border border-rose-100 overflow-hidden">
       <div className="p-4">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs text-muted-foreground">
@@ -461,6 +475,7 @@ function PostCard({
           <button
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-rose-500 transition-colors"
             onClick={() => likePostMutation.mutate(post.id)}
+            data-ocid="profile-post-like-btn"
           >
             <Heart className="w-4 h-4" />
             <span>{interactions?.likes?.toString() ?? "0"}</span>
@@ -468,12 +483,36 @@ function PostCard({
           <button
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-rose-500 transition-colors"
             onClick={() => onOpenComments(post)}
+            data-ocid="profile-post-comment-btn"
           >
             <MessageCircle className="w-4 h-4" />
             <span>{interactions?.comments?.toString() ?? "0"}</span>
           </button>
+          {!isOwnPost && (
+            <button
+              onClick={() => setGiftOpen(true)}
+              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-rose-500 transition-colors ml-auto"
+              data-ocid="profile-post-gift-btn"
+              title="Gift Roses"
+            >
+              <span className="text-base leading-none">🌹</span>
+              {Number(interactions?.totalRosesGifted ?? 0) > 0 && (
+                <span className="text-xs">
+                  {Number(interactions?.totalRosesGifted ?? 0).toFixed(0)}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </div>
+
+      <RoseGiftModal
+        open={giftOpen}
+        onClose={() => setGiftOpen(false)}
+        onGift={handleGift}
+        recipientName={recipientName}
+        currentBalance={roseBalance}
+      />
     </div>
   );
 }
@@ -961,7 +1000,7 @@ export default function UserProfilePage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-rose-50/50 to-background pb-20">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white/80 dark:bg-background/80 backdrop-blur-sm border-b border-rose-100 px-4 py-3">
+      <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-rose-100 px-4 py-3">
         <div className="flex items-center gap-3 max-w-2xl mx-auto">
           <Button
             variant="ghost"

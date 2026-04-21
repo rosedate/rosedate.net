@@ -136,6 +136,8 @@ export const Story = IDL.Record({
   'viewCount' : IDL.Nat,
   'viewedBy' : IDL.Vec(IDL.Principal),
   'timestamp' : Time,
+  'caption' : IDL.Opt(IDL.Text),
+  'reactions' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Vec(IDL.Principal))),
 });
 export const BlockRecord = IDL.Record({
   'blocked' : IDL.Principal,
@@ -261,6 +263,18 @@ export const StripeSessionStatus = IDL.Variant({
   }),
   'failed' : IDL.Record({ 'error' : IDL.Text }),
 });
+export const GroupUnreadCount = IDL.Record({
+  'groupId' : IDL.Nat,
+  'unreadCount' : IDL.Nat,
+});
+export const DirectUnreadCount = IDL.Record({
+  'conversationId' : IDL.Nat,
+  'unreadCount' : IDL.Nat,
+});
+export const UnreadCounts = IDL.Record({
+  'groups' : IDL.Vec(GroupUnreadCount),
+  'direct' : IDL.Vec(DirectUnreadCount),
+});
 export const StripeConfiguration = IDL.Record({
   'allowedCountries' : IDL.Vec(IDL.Text),
   'secretKey' : IDL.Text,
@@ -367,7 +381,7 @@ export const idlService = IDL.Service({
       [],
       [],
     ),
-  'createStory' : IDL.Func([MessageType], [IDL.Nat], []),
+  'createStory' : IDL.Func([MessageType, IDL.Opt(IDL.Text)], [IDL.Nat], []),
   'deleteCallerProfile' : IDL.Func([], [], []),
   'deleteComment' : IDL.Func([IDL.Text, IDL.Nat], [], []),
   'deleteGroupMessage' : IDL.Func(
@@ -457,6 +471,11 @@ export const idlService = IDL.Service({
   'getGroupChats' : IDL.Func([], [IDL.Vec(GroupChat)], ['query']),
   'getGroupDetails' : IDL.Func([IDL.Nat], [GroupChat], ['query']),
   'getGroupMessages' : IDL.Func([IDL.Nat], [IDL.Vec(GroupMessage)], ['query']),
+  'getGroupTypingUsers' : IDL.Func(
+      [IDL.Nat],
+      [IDL.Vec(IDL.Principal)],
+      ['query'],
+    ),
   'getIcpUsdExchangeRate' : IDL.Func([], [IDL.Float64], []),
   'getNotificationCountByType' : IDL.Func([], [NotificationCount], ['query']),
   'getNotifications' : IDL.Func(
@@ -470,6 +489,16 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'getOnlineUsers' : IDL.Func([], [IDL.Vec(IDL.Principal)], ['query']),
+  'getPinnedConversationMessage' : IDL.Func(
+      [IDL.Principal],
+      [IDL.Opt(Message)],
+      ['query'],
+    ),
+  'getPinnedGroupMessage' : IDL.Func(
+      [IDL.Nat],
+      [IDL.Opt(GroupMessage)],
+      ['query'],
+    ),
   'getPinnedStories' : IDL.Func([IDL.Principal], [IDL.Vec(Story)], ['query']),
   'getPinnedTrendingPost' : IDL.Func([], [IDL.Opt(Post)], ['query']),
   'getPlatformStats' : IDL.Func([], [PlatformStats], ['query']),
@@ -513,8 +542,15 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'getSavedPosts' : IDL.Func([], [IDL.Vec(Post)], ['query']),
+  'getStoryReactions' : IDL.Func(
+      [IDL.Nat],
+      [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Vec(IDL.Principal)))],
+      ['query'],
+    ),
   'getStripeSessionStatus' : IDL.Func([IDL.Text], [StripeSessionStatus], []),
   'getTotalCirculatingRoses' : IDL.Func([], [IDL.Float64], ['query']),
+  'getTypingUsers' : IDL.Func([IDL.Nat], [IDL.Vec(IDL.Principal)], ['query']),
+  'getUnreadCounts' : IDL.Func([], [UnreadCounts], ['query']),
   'getUnreadNotificationCount' : IDL.Func([], [IDL.Nat], ['query']),
   'getUserPosts' : IDL.Func([IDL.Principal], [IDL.Vec(Post)], ['query']),
   'getUserProfile' : IDL.Func(
@@ -526,6 +562,11 @@ export const idlService = IDL.Service({
   'getUserStories' : IDL.Func([IDL.Principal], [IDL.Vec(Story)], ['query']),
   'giftRoses' : IDL.Func([IDL.Principal, IDL.Float64], [], []),
   'giftRosesOnPost' : IDL.Func([IDL.Text, IDL.Float64], [], []),
+  'giftRosesOnStory' : IDL.Func(
+      [IDL.Nat, IDL.Float64],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'isFollowing' : IDL.Func([IDL.Principal], [IDL.Bool], ['query']),
   'isOnline' : IDL.Func([IDL.Principal], [IDL.Bool], ['query']),
@@ -535,6 +576,16 @@ export const idlService = IDL.Service({
   'leaveGroup' : IDL.Func([IDL.Nat], [], []),
   'likePost' : IDL.Func([IDL.Text], [], []),
   'markAllNotificationsAsRead' : IDL.Func([], [], []),
+  'markConversationRead' : IDL.Func(
+      [IDL.Nat],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'markGroupChatRead' : IDL.Func(
+      [IDL.Nat],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
   'markGroupMessageRead' : IDL.Func(
       [IDL.Nat, IDL.Nat],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
@@ -547,6 +598,16 @@ export const idlService = IDL.Service({
     ),
   'markNotificationAsRead' : IDL.Func([IDL.Nat], [], []),
   'markStoryAsViewed' : IDL.Func([IDL.Nat], [], []),
+  'pinConversationMessage' : IDL.Func(
+      [IDL.Principal, IDL.Nat],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'pinGroupMessage' : IDL.Func(
+      [IDL.Nat, IDL.Nat],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
   'pinPostToTrending' : IDL.Func([IDL.Text], [], []),
   'pinStory' : IDL.Func(
       [IDL.Nat],
@@ -560,6 +621,11 @@ export const idlService = IDL.Service({
     ),
   'reactToMessage' : IDL.Func(
       [IDL.Principal, IDL.Nat, IDL.Text],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'reactToStory' : IDL.Func(
+      [IDL.Nat, IDL.Text],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
       [],
     ),
@@ -585,7 +651,9 @@ export const idlService = IDL.Service({
       [],
       [],
     ),
+  'setGroupTyping' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
   'setStripeConfiguration' : IDL.Func([StripeConfiguration], [], []),
+  'setTyping' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
   'transform' : IDL.Func(
       [TransformationInput],
       [TransformationOutput],
@@ -599,12 +667,27 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'unlikePost' : IDL.Func([IDL.Text], [], []),
+  'unpinConversationMessage' : IDL.Func(
+      [IDL.Principal],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'unpinGroupMessage' : IDL.Func(
+      [IDL.Nat],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
   'unpinStory' : IDL.Func(
       [IDL.Nat],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
       [],
     ),
   'unpinTrendingPost' : IDL.Func([], [], []),
+  'unreactToStory' : IDL.Func(
+      [IDL.Nat, IDL.Text],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
   'unsavePost' : IDL.Func([IDL.Text], [], []),
   'updateGroupAvatar' : IDL.Func([IDL.Nat, IDL.Opt(ExternalBlob)], [], []),
   'updateGroupName' : IDL.Func([IDL.Nat, IDL.Text], [], []),
@@ -742,6 +825,8 @@ export const idlFactory = ({ IDL }) => {
     'viewCount' : IDL.Nat,
     'viewedBy' : IDL.Vec(IDL.Principal),
     'timestamp' : Time,
+    'caption' : IDL.Opt(IDL.Text),
+    'reactions' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Vec(IDL.Principal))),
   });
   const BlockRecord = IDL.Record({
     'blocked' : IDL.Principal,
@@ -867,6 +952,18 @@ export const idlFactory = ({ IDL }) => {
     }),
     'failed' : IDL.Record({ 'error' : IDL.Text }),
   });
+  const GroupUnreadCount = IDL.Record({
+    'groupId' : IDL.Nat,
+    'unreadCount' : IDL.Nat,
+  });
+  const DirectUnreadCount = IDL.Record({
+    'conversationId' : IDL.Nat,
+    'unreadCount' : IDL.Nat,
+  });
+  const UnreadCounts = IDL.Record({
+    'groups' : IDL.Vec(GroupUnreadCount),
+    'direct' : IDL.Vec(DirectUnreadCount),
+  });
   const StripeConfiguration = IDL.Record({
     'allowedCountries' : IDL.Vec(IDL.Text),
     'secretKey' : IDL.Text,
@@ -970,7 +1067,7 @@ export const idlFactory = ({ IDL }) => {
         [],
         [],
       ),
-    'createStory' : IDL.Func([MessageType], [IDL.Nat], []),
+    'createStory' : IDL.Func([MessageType, IDL.Opt(IDL.Text)], [IDL.Nat], []),
     'deleteCallerProfile' : IDL.Func([], [], []),
     'deleteComment' : IDL.Func([IDL.Text, IDL.Nat], [], []),
     'deleteGroupMessage' : IDL.Func(
@@ -1064,6 +1161,11 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(GroupMessage)],
         ['query'],
       ),
+    'getGroupTypingUsers' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Vec(IDL.Principal)],
+        ['query'],
+      ),
     'getIcpUsdExchangeRate' : IDL.Func([], [IDL.Float64], []),
     'getNotificationCountByType' : IDL.Func([], [NotificationCount], ['query']),
     'getNotifications' : IDL.Func(
@@ -1077,6 +1179,16 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'getOnlineUsers' : IDL.Func([], [IDL.Vec(IDL.Principal)], ['query']),
+    'getPinnedConversationMessage' : IDL.Func(
+        [IDL.Principal],
+        [IDL.Opt(Message)],
+        ['query'],
+      ),
+    'getPinnedGroupMessage' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Opt(GroupMessage)],
+        ['query'],
+      ),
     'getPinnedStories' : IDL.Func([IDL.Principal], [IDL.Vec(Story)], ['query']),
     'getPinnedTrendingPost' : IDL.Func([], [IDL.Opt(Post)], ['query']),
     'getPlatformStats' : IDL.Func([], [PlatformStats], ['query']),
@@ -1120,8 +1232,15 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'getSavedPosts' : IDL.Func([], [IDL.Vec(Post)], ['query']),
+    'getStoryReactions' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Vec(IDL.Principal)))],
+        ['query'],
+      ),
     'getStripeSessionStatus' : IDL.Func([IDL.Text], [StripeSessionStatus], []),
     'getTotalCirculatingRoses' : IDL.Func([], [IDL.Float64], ['query']),
+    'getTypingUsers' : IDL.Func([IDL.Nat], [IDL.Vec(IDL.Principal)], ['query']),
+    'getUnreadCounts' : IDL.Func([], [UnreadCounts], ['query']),
     'getUnreadNotificationCount' : IDL.Func([], [IDL.Nat], ['query']),
     'getUserPosts' : IDL.Func([IDL.Principal], [IDL.Vec(Post)], ['query']),
     'getUserProfile' : IDL.Func(
@@ -1133,6 +1252,11 @@ export const idlFactory = ({ IDL }) => {
     'getUserStories' : IDL.Func([IDL.Principal], [IDL.Vec(Story)], ['query']),
     'giftRoses' : IDL.Func([IDL.Principal, IDL.Float64], [], []),
     'giftRosesOnPost' : IDL.Func([IDL.Text, IDL.Float64], [], []),
+    'giftRosesOnStory' : IDL.Func(
+        [IDL.Nat, IDL.Float64],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'isFollowing' : IDL.Func([IDL.Principal], [IDL.Bool], ['query']),
     'isOnline' : IDL.Func([IDL.Principal], [IDL.Bool], ['query']),
@@ -1142,6 +1266,16 @@ export const idlFactory = ({ IDL }) => {
     'leaveGroup' : IDL.Func([IDL.Nat], [], []),
     'likePost' : IDL.Func([IDL.Text], [], []),
     'markAllNotificationsAsRead' : IDL.Func([], [], []),
+    'markConversationRead' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'markGroupChatRead' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
     'markGroupMessageRead' : IDL.Func(
         [IDL.Nat, IDL.Nat],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
@@ -1154,6 +1288,16 @@ export const idlFactory = ({ IDL }) => {
       ),
     'markNotificationAsRead' : IDL.Func([IDL.Nat], [], []),
     'markStoryAsViewed' : IDL.Func([IDL.Nat], [], []),
+    'pinConversationMessage' : IDL.Func(
+        [IDL.Principal, IDL.Nat],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'pinGroupMessage' : IDL.Func(
+        [IDL.Nat, IDL.Nat],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
     'pinPostToTrending' : IDL.Func([IDL.Text], [], []),
     'pinStory' : IDL.Func(
         [IDL.Nat],
@@ -1167,6 +1311,11 @@ export const idlFactory = ({ IDL }) => {
       ),
     'reactToMessage' : IDL.Func(
         [IDL.Principal, IDL.Nat, IDL.Text],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'reactToStory' : IDL.Func(
+        [IDL.Nat, IDL.Text],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
         [],
       ),
@@ -1192,7 +1341,9 @@ export const idlFactory = ({ IDL }) => {
         [],
         [],
       ),
+    'setGroupTyping' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
     'setStripeConfiguration' : IDL.Func([StripeConfiguration], [], []),
+    'setTyping' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
     'transform' : IDL.Func(
         [TransformationInput],
         [TransformationOutput],
@@ -1206,12 +1357,27 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'unlikePost' : IDL.Func([IDL.Text], [], []),
+    'unpinConversationMessage' : IDL.Func(
+        [IDL.Principal],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'unpinGroupMessage' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
     'unpinStory' : IDL.Func(
         [IDL.Nat],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
         [],
       ),
     'unpinTrendingPost' : IDL.Func([], [], []),
+    'unreactToStory' : IDL.Func(
+        [IDL.Nat, IDL.Text],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
     'unsavePost' : IDL.Func([IDL.Text], [], []),
     'updateGroupAvatar' : IDL.Func([IDL.Nat, IDL.Opt(ExternalBlob)], [], []),
     'updateGroupName' : IDL.Func([IDL.Nat, IDL.Text], [], []),

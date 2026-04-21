@@ -13,7 +13,6 @@ import Array "mo:core/Array";
 import Nat "mo:core/Nat";
 import Float "mo:base/Float";
 import Int "mo:core/Int";
-import Debug "mo:base/Debug";
 import Buffer "mo:base/Buffer";
 import Runtime "mo:core/Runtime";
 import Iter "mo:core/Iter";
@@ -87,23 +86,23 @@ actor {
 
   public shared ({ caller }) func blockUser(userToBlock : Principal) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can block others");
+      Runtime.trap("Unauthorized: Only users can block others");
     };
 
     if (caller == userToBlock) {
-      Debug.trap("Cannot block yourself");
+      Runtime.trap("Cannot block yourself");
     };
 
     switch (userProfiles.get(userToBlock)) {
       case null {
-        Debug.trap("User to block not found");
+        Runtime.trap("User to block not found");
       };
       case (?_) {};
     };
 
     // Check if already blocked
     if (isBlocked(caller, userToBlock)) {
-      Debug.trap("User is already blocked");
+      Runtime.trap("User is already blocked");
     };
 
     // Add to block list
@@ -153,16 +152,16 @@ actor {
 
   public shared ({ caller }) func unblockUser(userToUnblock : Principal) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can unblock others");
+      Runtime.trap("Unauthorized: Only users can unblock others");
     };
 
     if (caller == userToUnblock) {
-      Debug.trap("Cannot unblock yourself");
+      Runtime.trap("Cannot unblock yourself");
     };
 
     // Check if actually blocked
     if (not isBlocked(caller, userToUnblock)) {
-      Debug.trap("User is not blocked");
+      Runtime.trap("User is not blocked");
     };
 
     // Remove from block list
@@ -176,7 +175,7 @@ actor {
 
   public query ({ caller }) func getBlockedUsers() : async [Principal] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view their block list");
+      Runtime.trap("Unauthorized: Only users can view their block list");
     };
 
     switch (blockListMap.get(caller)) {
@@ -187,7 +186,7 @@ actor {
 
   public query ({ caller }) func isUserBlocked(user : Principal) : async Bool {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can check block status");
+      Runtime.trap("Unauthorized: Only users can check block status");
     };
 
     isBlocked(caller, user);
@@ -195,7 +194,7 @@ actor {
 
   public query ({ caller }) func getAllBlockRecords() : async [BlockRecord] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Debug.trap("Unauthorized: Only admins can view all block records");
+      Runtime.trap("Unauthorized: Only admins can view all block records");
     };
 
     blockRecords;
@@ -228,12 +227,12 @@ actor {
 
   public query ({ caller }) func getCallerUserProfile() : async UserProfile {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view profiles");
+      Runtime.trap("Unauthorized: Only users can view profiles");
     };
     switch (userProfiles.get(caller)) {
       case (?profile) profile;
       case null {
-        Debug.trap("Profile for caller " # caller.toText() # " not found");
+        Runtime.trap("Profile for caller " # caller.toText() # " not found");
       };
     };
   };
@@ -241,32 +240,32 @@ actor {
   public query ({ caller }) func getUserProfile({ profileId : Principal }) : async UserProfile {
     // Require authentication to view profiles
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view profiles");
+      Runtime.trap("Unauthorized: Only authenticated users can view profiles");
     };
 
     // Authenticated users cannot view blocked profiles
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       if (hasBlockingRelationship(caller, profileId)) {
-        Debug.trap("Cannot view profile: blocking relationship exists");
+        Runtime.trap("Cannot view profile: blocking relationship exists");
       };
     };
 
     switch (userProfiles.get(profileId)) {
       case (?actualProfile) actualProfile;
       case null {
-        Debug.trap("Profile for principal " # profileId.toText() # " not found");
+        Runtime.trap("Profile for principal " # profileId.toText() # " not found");
       };
     };
   };
 
   public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can save profiles");
+      Runtime.trap("Unauthorized: Only users can save profiles");
     };
 
     // Prevent non-admins from using admin username
     if (isAdminUsername(profile.username) and not AccessControl.isAdmin(accessControlState, caller)) {
-      Debug.trap("Unauthorized: Username 'rosalia' is reserved for admin");
+      Runtime.trap("Unauthorized: Username 'rosalia' is reserved for admin");
     };
 
     userProfiles.add(caller, profile);
@@ -297,11 +296,11 @@ actor {
 
   public shared ({ caller }) func deleteCallerProfile() : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can delete profiles");
+      Runtime.trap("Unauthorized: Only users can delete profiles");
     };
 
     if (AccessControl.isAdmin(accessControlState, caller)) {
-      Debug.trap("Unauthorized: Admin cannot delete their profile");
+      Runtime.trap("Unauthorized: Admin cannot delete their profile");
     };
 
     userProfiles.remove(caller);
@@ -313,7 +312,7 @@ actor {
   // Email Preferences
   public query ({ caller }) func getCallerEmailPreferences() : async { email : ?Text; preferences : ?EmailPreferences } {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view email preferences");
+      Runtime.trap("Unauthorized: Only users can view email preferences");
     };
     switch (userProfiles.get(caller)) {
       case (?profile) { { email = profile.email; preferences = profile.emailPreferences } };
@@ -323,7 +322,7 @@ actor {
 
   public shared ({ caller }) func saveCallerEmailPreferences(email : ?Text, preferences : EmailPreferences) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can save email preferences");
+      Runtime.trap("Unauthorized: Only users can save email preferences");
     };
     switch (userProfiles.get(caller)) {
       case (?profile) {
@@ -331,14 +330,14 @@ actor {
         userProfiles.add(caller, updated);
       };
       case null {
-        Debug.trap("Profile not found");
+        Runtime.trap("Profile not found");
       };
     };
   };
 
   public query ({ caller }) func isFollowing(targetUser : Principal) : async Bool {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can check following status");
+      Runtime.trap("Unauthorized: Only users can check following status");
     };
 
     switch (followingMap.get(caller)) {
@@ -354,21 +353,21 @@ actor {
 
   public shared ({ caller }) func followUser(targetUser : Principal) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can follow others");
+      Runtime.trap("Unauthorized: Only users can follow others");
     };
 
     if (caller == targetUser) {
-      Debug.trap("Cannot follow yourself");
+      Runtime.trap("Cannot follow yourself");
     };
 
     // Check blocking relationship
     if (hasBlockingRelationship(caller, targetUser)) {
-      Debug.trap("Cannot follow: blocking relationship exists");
+      Runtime.trap("Cannot follow: blocking relationship exists");
     };
 
     switch (userProfiles.get(targetUser)) {
       case null {
-        Debug.trap("Target user profile not found");
+        Runtime.trap("Target user profile not found");
       };
       case (?_) {};
     };
@@ -409,7 +408,7 @@ actor {
 
   public shared ({ caller }) func unfollowUser(targetUser : Principal) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can unfollow others");
+      Runtime.trap("Unauthorized: Only users can unfollow others");
     };
 
     switch (followingMap.get(caller)) {
@@ -429,7 +428,7 @@ actor {
   public query ({ caller }) func getFollowerCount(targetUser : Principal) : async Nat {
     // Require authentication to view follower counts
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view follower counts");
+      Runtime.trap("Unauthorized: Only authenticated users can view follower counts");
     };
 
     switch (followersMap.get(targetUser)) {
@@ -441,7 +440,7 @@ actor {
   public query ({ caller }) func getFollowingCount(targetUser : Principal) : async Nat {
     // Require authentication to view following counts
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view following counts");
+      Runtime.trap("Unauthorized: Only authenticated users can view following counts");
     };
 
     switch (followingMap.get(targetUser)) {
@@ -453,7 +452,7 @@ actor {
   // New function to get posts from followed users
   public query ({ caller }) func getPostsFromFollowedUsers() : async [Post] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view followed posts");
+      Runtime.trap("Unauthorized: Only users can view followed posts");
     };
 
     switch (followingMap.get(caller)) {
@@ -470,7 +469,7 @@ actor {
         Buffer.toArray(buffer);
       };
       case null {
-        Debug.trap("No following list found for user");
+        Runtime.trap("No following list found for user");
       };
     };
   };
@@ -487,7 +486,8 @@ actor {
     viewedBy : [Principal];
   };
 
-  public type Story = {
+  // StoryV2 – type before caption and reactions were added
+  type StoryV2 = {
     id : Nat;
     author : Principal;
     content : MessageType;
@@ -497,17 +497,38 @@ actor {
     viewCount : Nat;
   };
 
+  public type Story = {
+    id : Nat;
+    author : Principal;
+    content : MessageType;
+    timestamp : Time.Time;
+    expiresAt : Time.Time;
+    viewedBy : [Principal];
+    viewCount : Nat;
+    caption : ?Text;
+    reactions : [(Text, [Principal])];
+  };
+
+  public type RoseGiftOnStory = {
+    storyId : Nat;
+    gifter : Principal;
+    amount : Float;
+    timestamp : Time.Time;
+  };
+
   var nextStoryId = 0;
   var stories = Map.empty<Nat, Story>();
   var userStories = Map.empty<Principal, [Nat]>();
   // Pinned/highlighted stories per user: storyId stays permanently until unpinned
   var pinnedStories = Map.empty<Principal, [Nat]>();
+  // Story gifts tracking
+  var storyGiftsMap = Map.empty<Nat, [RoseGiftOnStory]>();
 
   let storyDuration : Int = 72 * 60 * 60 * 1_000_000_000; // 72 hours in nanoseconds
 
-  public shared ({ caller }) func createStory(content : MessageType) : async Nat {
+  public shared ({ caller }) func createStory(content : MessageType, caption : ?Text) : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can create stories");
+      Runtime.trap("Unauthorized: Only users can create stories");
     };
 
     // Validate content type - only image, video, and media allowed
@@ -516,7 +537,7 @@ actor {
       case (#video(_)) {};
       case (#media(_)) {};
       case (_) {
-        Debug.trap("Invalid content type: Only image, video, and media messages can be transformed into stories");
+        Runtime.trap("Invalid content type: Only image, video, and media messages can be transformed into stories");
       };
     };
 
@@ -532,6 +553,8 @@ actor {
       expiresAt = now + storyDuration;
       viewedBy = [];
       viewCount = 0;
+      caption;
+      reactions = [];
     };
 
     stories.add(storyId, story);
@@ -552,7 +575,7 @@ actor {
   public query ({ caller }) func getActiveStories() : async [Story] {
     // Require authentication to view stories
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view stories");
+      Runtime.trap("Unauthorized: Only authenticated users can view stories");
     };
 
     let now = Time.now();
@@ -573,12 +596,12 @@ actor {
   public query ({ caller }) func getUserStories(userId : Principal) : async [Story] {
     // Require authentication to view stories
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view stories");
+      Runtime.trap("Unauthorized: Only authenticated users can view stories");
     };
 
     // Check blocking relationship
     if (hasBlockingRelationship(caller, userId)) {
-      Debug.trap("Cannot view stories: blocking relationship exists");
+      Runtime.trap("Cannot view stories: blocking relationship exists");
     };
 
     let now = Time.now();
@@ -613,14 +636,14 @@ actor {
 
   public shared ({ caller }) func markStoryAsViewed(storyId : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view stories");
+      Runtime.trap("Unauthorized: Only users can view stories");
     };
 
     switch (stories.get(storyId)) {
       case (?story) {
         // Check blocking relationship
         if (hasBlockingRelationship(caller, story.author)) {
-          Debug.trap("Cannot view story: blocking relationship exists");
+          Runtime.trap("Cannot view story: blocking relationship exists");
         };
 
         // Check if story is expired — pinned stories are permanently visible
@@ -629,13 +652,13 @@ actor {
           case null { false };
         };
         if (story.expiresAt <= Time.now() and not isAuthorPinned) {
-          Debug.trap("Story has expired");
+          Runtime.trap("Story has expired");
         };
 
         // Verify caller has a valid user profile
         switch (userProfiles.get(caller)) {
           case null {
-            Debug.trap("User profile not found");
+            Runtime.trap("User profile not found");
           };
           case (?_) {};
         };
@@ -644,7 +667,7 @@ actor {
         let alreadyViewed = story.viewedBy.find(func(p : Principal) : Bool { p == caller });
         switch (alreadyViewed) {
           case null {
-            let updatedStory = {
+            let updatedStory : Story = {
               story with
               viewedBy = story.viewedBy.concat([caller]);
               viewCount = story.viewCount + 1;
@@ -660,7 +683,7 @@ actor {
         };
       };
       case null {
-        Debug.trap("Story not found");
+        Runtime.trap("Story not found");
       };
     };
   };
@@ -669,7 +692,7 @@ actor {
   public shared ({ caller }) func cleanupExpiredStories() : async Nat {
     // Restrict to admin only for security
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Debug.trap("Unauthorized: Only admins can trigger story cleanup");
+      Runtime.trap("Unauthorized: Only admins can trigger story cleanup");
     };
 
     let now = Time.now();
@@ -768,12 +791,12 @@ actor {
 
   public query ({ caller }) func getPinnedStories(userId : Principal) : async [Story] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view pinned stories");
+      Runtime.trap("Unauthorized: Only authenticated users can view pinned stories");
     };
 
     // Check blocking relationship
     if (hasBlockingRelationship(caller, userId)) {
-      Debug.trap("Cannot view pinned stories: blocking relationship exists");
+      Runtime.trap("Cannot view pinned stories: blocking relationship exists");
     };
 
     switch (pinnedStories.get(userId)) {
@@ -787,6 +810,146 @@ actor {
           };
         };
         Buffer.toArray(buffer);
+      };
+    };
+  };
+
+  // Story Reactions
+  public shared ({ caller }) func reactToStory(storyId : Nat, emoji : Text) : async { #ok; #err : Text } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      return #err("Unauthorized: Only users can react to stories");
+    };
+
+    switch (stories.get(storyId)) {
+      case null { return #err("Story not found") };
+      case (?story) {
+        // Check blocking relationship
+        if (hasBlockingRelationship(caller, story.author)) {
+          return #err("Cannot react to story: blocking relationship exists");
+        };
+
+        // Build updated reactions array
+        var found = false;
+        let updatedReactions = story.reactions.map(func(e, principals) {
+          if (e == emoji) {
+            found := true;
+            // Add caller if not already reacted
+            if (principals.find(func(p : Principal) : Bool { p == caller }) == null) {
+              (e, principals.concat([caller]))
+            } else {
+              (e, principals)
+            }
+          } else {
+            (e, principals)
+          }
+        });
+
+        let finalReactions = if (found) {
+          updatedReactions
+        } else {
+          updatedReactions.concat([(emoji, [caller])])
+        };
+
+        let updatedStory : Story = { story with reactions = finalReactions };
+        stories.add(storyId, updatedStory);
+        #ok
+      };
+    };
+  };
+
+  public shared ({ caller }) func unreactToStory(storyId : Nat, emoji : Text) : async { #ok; #err : Text } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      return #err("Unauthorized: Only users can remove story reactions");
+    };
+
+    switch (stories.get(storyId)) {
+      case null { return #err("Story not found") };
+      case (?story) {
+        let updatedReactions = story.reactions.map(func(e, principals) {
+          if (e == emoji) {
+            (e, principals.filter(func(p : Principal) : Bool { p != caller }))
+          } else {
+            (e, principals)
+          }
+        });
+
+        // Remove entries with empty principal lists
+        let cleanedReactions = updatedReactions.filter(func(entry : (Text, [Principal])) : Bool {
+          entry.1.size() > 0
+        });
+
+        let updatedStory : Story = { story with reactions = cleanedReactions };
+        stories.add(storyId, updatedStory);
+        #ok
+      };
+    };
+  };
+
+  public query ({ caller }) func getStoryReactions(storyId : Nat) : async [(Text, [Principal])] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view story reactions");
+    };
+
+    switch (stories.get(storyId)) {
+      case null { [] };
+      case (?story) { story.reactions };
+    };
+  };
+
+  // Story Gifting
+  public shared ({ caller }) func giftRosesOnStory(storyId : Nat, amount : Float) : async { #ok; #err : Text } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      return #err("Unauthorized: Only users can gift Roses on stories");
+    };
+
+    if (amount < 0.01) {
+      return #err("Minimum gift amount is 0.01 Rose");
+    };
+
+    switch (stories.get(storyId)) {
+      case null { return #err("Story not found") };
+      case (?story) {
+        if (story.author == caller) {
+          return #err("Cannot gift Roses to your own story");
+        };
+
+        // Check blocking relationship
+        if (hasBlockingRelationship(caller, story.author)) {
+          return #err("Cannot gift Roses: blocking relationship exists");
+        };
+
+        let senderBalance = switch (roseBalances.get(caller)) {
+          case null { 0.0 };
+          case (?balance) { balance };
+        };
+        if (senderBalance < amount) {
+          return #err("Insufficient balance to gift " # Float.toText(amount) # " Roses");
+        };
+
+        let fee = giftRosesInternal(caller, story.author, amount);
+
+        let receipt = createReceiptMessage(caller, story.author, amount, fee, "GIFT");
+        sendReceiptMessage(caller, story.author, receipt);
+
+        let gift : RoseGiftOnStory = {
+          storyId;
+          gifter = caller;
+          amount;
+          timestamp = Time.now();
+        };
+
+        switch (storyGiftsMap.get(storyId)) {
+          case (?gifts) {
+            storyGiftsMap.add(storyId, gifts.concat([gift]));
+          };
+          case null {
+            storyGiftsMap.add(storyId, [gift]);
+          };
+        };
+
+        // Send gift notification to story author
+        ignore createPostGiftNotification(caller, story.author, storyId.toText(), amount);
+        #ok
       };
     };
   };
@@ -824,25 +987,25 @@ actor {
 
   public shared ({ caller }) func createGroupChat(name : Text, initialParticipants : [Principal], avatar : ?Storage.ExternalBlob) : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can create group chats");
+      Runtime.trap("Unauthorized: Only users can create group chats");
     };
 
     if (name.size() == 0) {
-      Debug.trap("Group name cannot be empty");
+      Runtime.trap("Group name cannot be empty");
     };
 
     // Verify all participants exist and check blocking
     for (participant in initialParticipants.vals()) {
       switch (userProfiles.get(participant)) {
         case null {
-          Debug.trap("Participant " # participant.toText() # " not found");
+          Runtime.trap("Participant " # participant.toText() # " not found");
         };
         case (?_) {};
       };
 
       // Check if creator has blocking relationship with any participant
       if (hasBlockingRelationship(caller, participant)) {
-        Debug.trap("Cannot create group: blocking relationship exists with " # participant.toText());
+        Runtime.trap("Cannot create group: blocking relationship exists with " # participant.toText());
       };
     };
 
@@ -904,26 +1067,26 @@ actor {
 
   public shared ({ caller }) func addGroupParticipant(groupId : Nat, newParticipant : Principal) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can add participants");
+      Runtime.trap("Unauthorized: Only users can add participants");
     };
 
     if (not isGroupAdmin(groupId, caller)) {
-      Debug.trap("Unauthorized: Only group admins can add participants");
+      Runtime.trap("Unauthorized: Only group admins can add participants");
     };
 
     // Verify caller is still a participant
     if (not isGroupParticipant(groupId, caller)) {
-      Debug.trap("Unauthorized: You are no longer a participant of this group");
+      Runtime.trap("Unauthorized: You are no longer a participant of this group");
     };
 
     // Check blocking relationship between caller and new participant
     if (hasBlockingRelationship(caller, newParticipant)) {
-      Debug.trap("Cannot add participant: blocking relationship exists");
+      Runtime.trap("Cannot add participant: blocking relationship exists");
     };
 
     switch (userProfiles.get(newParticipant)) {
       case null {
-        Debug.trap("User not found");
+        Runtime.trap("User not found");
       };
       case (?_) {};
     };
@@ -932,13 +1095,13 @@ actor {
       case (?group) {
         // Check if already a participant
         if (group.participants.find(func(p : Principal) : Bool { p == newParticipant }) != null) {
-          Debug.trap("User is already a participant");
+          Runtime.trap("User is already a participant");
         };
 
         // Check blocking relationship with any existing participant
         for (participant in group.participants.vals()) {
           if (hasBlockingRelationship(participant, newParticipant)) {
-            Debug.trap("Cannot add participant: blocking relationship exists with existing member");
+            Runtime.trap("Cannot add participant: blocking relationship exists with existing member");
           };
         };
 
@@ -962,35 +1125,35 @@ actor {
         ignore createGroupAddNotification(caller, newParticipant, groupId, group.name);
       };
       case null {
-        Debug.trap("Group not found");
+        Runtime.trap("Group not found");
       };
     };
   };
 
   public shared ({ caller }) func removeGroupParticipant(groupId : Nat, participant : Principal) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can remove participants");
+      Runtime.trap("Unauthorized: Only users can remove participants");
     };
 
     if (not isGroupAdmin(groupId, caller)) {
-      Debug.trap("Unauthorized: Only group admins can remove participants");
+      Runtime.trap("Unauthorized: Only group admins can remove participants");
     };
 
     // Verify caller is still a participant
     if (not isGroupParticipant(groupId, caller)) {
-      Debug.trap("Unauthorized: You are no longer a participant of this group");
+      Runtime.trap("Unauthorized: You are no longer a participant of this group");
     };
 
     switch (groupChats.get(groupId)) {
       case (?group) {
         // Cannot remove creator
         if (participant == group.creator) {
-          Debug.trap("Cannot remove group creator");
+          Runtime.trap("Cannot remove group creator");
         };
 
         // Verify participant is actually in the group
         if (not isGroupParticipant(groupId, participant)) {
-          Debug.trap("User is not a participant of this group");
+          Runtime.trap("User is not a participant of this group");
         };
 
         let updatedParticipants = group.participants.filter(func(p : Principal) : Bool { p != participant });
@@ -1012,25 +1175,25 @@ actor {
         };
       };
       case null {
-        Debug.trap("Group not found");
+        Runtime.trap("Group not found");
       };
     };
   };
 
   public shared ({ caller }) func leaveGroup(groupId : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can leave groups");
+      Runtime.trap("Unauthorized: Only users can leave groups");
     };
 
     if (not isGroupParticipant(groupId, caller)) {
-      Debug.trap("You are not a participant of this group");
+      Runtime.trap("You are not a participant of this group");
     };
 
     switch (groupChats.get(groupId)) {
       case (?group) {
         // Creator cannot leave their own group
         if (caller == group.creator) {
-          Debug.trap("Group creator cannot leave the group. Transfer ownership or delete the group instead.");
+          Runtime.trap("Group creator cannot leave the group. Transfer ownership or delete the group instead.");
         };
 
         let updatedParticipants = group.participants.filter(func(p : Principal) : Bool { p != caller });
@@ -1052,27 +1215,27 @@ actor {
         };
       };
       case null {
-        Debug.trap("Group not found");
+        Runtime.trap("Group not found");
       };
     };
   };
 
   public shared ({ caller }) func updateGroupName(groupId : Nat, newName : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can update group name");
+      Runtime.trap("Unauthorized: Only users can update group name");
     };
 
     if (not isGroupAdmin(groupId, caller)) {
-      Debug.trap("Unauthorized: Only group admins can update group name");
+      Runtime.trap("Unauthorized: Only group admins can update group name");
     };
 
     // Verify caller is still a participant
     if (not isGroupParticipant(groupId, caller)) {
-      Debug.trap("Unauthorized: You are no longer a participant of this group");
+      Runtime.trap("Unauthorized: You are no longer a participant of this group");
     };
 
     if (newName.size() == 0) {
-      Debug.trap("Group name cannot be empty");
+      Runtime.trap("Group name cannot be empty");
     };
 
     switch (groupChats.get(groupId)) {
@@ -1084,23 +1247,23 @@ actor {
         groupChats.add(groupId, updatedGroup);
       };
       case null {
-        Debug.trap("Group not found");
+        Runtime.trap("Group not found");
       };
     };
   };
 
   public shared ({ caller }) func updateGroupAvatar(groupId : Nat, newAvatar : ?Storage.ExternalBlob) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can update group avatar");
+      Runtime.trap("Unauthorized: Only users can update group avatar");
     };
 
     if (not isGroupAdmin(groupId, caller)) {
-      Debug.trap("Unauthorized: Only group admins can update group avatar");
+      Runtime.trap("Unauthorized: Only group admins can update group avatar");
     };
 
     // Verify caller is still a participant
     if (not isGroupParticipant(groupId, caller)) {
-      Debug.trap("Unauthorized: You are no longer a participant of this group");
+      Runtime.trap("Unauthorized: You are no longer a participant of this group");
     };
 
     switch (groupChats.get(groupId)) {
@@ -1112,18 +1275,18 @@ actor {
         groupChats.add(groupId, updatedGroup);
       };
       case null {
-        Debug.trap("Group not found");
+        Runtime.trap("Group not found");
       };
     };
   };
 
   public shared ({ caller }) func sendGroupMessage(groupId : Nat, content : MessageType, replyToId : ?Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can send group messages");
+      Runtime.trap("Unauthorized: Only users can send group messages");
     };
 
     if (not isGroupParticipant(groupId, caller)) {
-      Debug.trap("Unauthorized: Only group participants can send messages");
+      Runtime.trap("Unauthorized: Only group participants can send messages");
     };
 
     switch (groupChats.get(groupId)) {
@@ -1131,14 +1294,14 @@ actor {
         // Check if sender has blocking relationship with any participant
         for (participant in group.participants.vals()) {
           if (participant != caller and hasBlockingRelationship(caller, participant)) {
-            Debug.trap("Cannot send message: blocking relationship exists with group member");
+            Runtime.trap("Cannot send message: blocking relationship exists with group member");
           };
         };
 
         // Handle Rose gifting in groups
         switch (content) {
           case (#rose(_amount)) {
-            Debug.trap("Rose gifting in groups is not supported. Please gift individually.");
+            Runtime.trap("Rose gifting in groups is not supported. Please gift individually.");
           };
           case (_) {};
         };
@@ -1188,14 +1351,14 @@ actor {
         };
       };
       case null {
-        Debug.trap("Group not found");
+        Runtime.trap("Group not found");
       };
     };
   };
 
   public query ({ caller }) func getGroupChats() : async [GroupChat] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view group chats");
+      Runtime.trap("Unauthorized: Only users can view group chats");
     };
 
     let buffer = Buffer.Buffer<GroupChat>(0);
@@ -1216,11 +1379,11 @@ actor {
 
   public query ({ caller }) func getGroupMessages(groupId : Nat) : async [GroupMessage] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view group messages");
+      Runtime.trap("Unauthorized: Only users can view group messages");
     };
 
     if (not isGroupParticipant(groupId, caller)) {
-      Debug.trap("Unauthorized: Only group participants can view messages");
+      Runtime.trap("Unauthorized: Only group participants can view messages");
     };
 
     switch (groupMessages.get(groupId)) {
@@ -1231,17 +1394,17 @@ actor {
 
   public query ({ caller }) func getGroupDetails(groupId : Nat) : async GroupChat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view group details");
+      Runtime.trap("Unauthorized: Only users can view group details");
     };
 
     if (not isGroupParticipant(groupId, caller)) {
-      Debug.trap("Unauthorized: Only group participants can view group details");
+      Runtime.trap("Unauthorized: Only group participants can view group details");
     };
 
     switch (groupChats.get(groupId)) {
       case (?group) group;
       case null {
-        Debug.trap("Group not found");
+        Runtime.trap("Group not found");
       };
     };
   };
@@ -1307,6 +1470,11 @@ actor {
   var nextConversationId = 0;
   var conversations = Map.empty<Nat, Conversation>();
 
+  // Pinned messages: conversationId -> pinnedMessageId
+  var conversationPinnedMessages = Map.empty<Nat, Nat>();
+  // Pinned group messages: groupId -> pinnedGroupMessageId
+  var groupPinnedMessages = Map.empty<Nat, Nat>();
+
   func createTradeRequestMessage(requester : Principal, amount : Float, requestType : Text) : TradeRequestMessage {
     {
       requester;
@@ -1330,21 +1498,21 @@ actor {
 
   public shared ({ caller }) func sendMessage(receiver : Principal, content : MessageType, replyToId : ?Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can send messages");
+      Runtime.trap("Unauthorized: Only users can send messages");
     };
 
     if (caller == receiver) {
-      Debug.trap("Cannot send messages to yourself");
+      Runtime.trap("Cannot send messages to yourself");
     };
 
     // Check blocking relationship
     if (hasBlockingRelationship(caller, receiver)) {
-      Debug.trap("Cannot send message: blocking relationship exists");
+      Runtime.trap("Cannot send message: blocking relationship exists");
     };
 
     switch (userProfiles.get(receiver)) {
       case null {
-        Debug.trap("Receiver profile not found");
+        Runtime.trap("Receiver profile not found");
       };
       case (?_) {};
     };
@@ -1352,14 +1520,14 @@ actor {
     switch (content) {
       case (#rose(amount)) {
         if (amount < 0.01) {
-          Debug.trap("Minimum gift amount is 0.01 Rose");
+          Runtime.trap("Minimum gift amount is 0.01 Rose");
         };
         let senderBalance = switch (roseBalances.get(caller)) {
           case null { 0.0 };
           case (?balance) { balance };
         };
         if (senderBalance < amount) {
-          Debug.trap("Insufficient balance to gift " # Float.toText(amount) # " Roses");
+          Runtime.trap("Insufficient balance to gift " # Float.toText(amount) # " Roses");
         };
         let fee = giftRosesInternal(caller, receiver, amount);
 
@@ -1373,7 +1541,7 @@ actor {
         // Verify post exists
         switch (posts.get(postDetails.postId)) {
           case null {
-            Debug.trap("Post not found");
+            Runtime.trap("Post not found");
           };
           case (?_) {};
         };
@@ -1530,14 +1698,14 @@ actor {
 
   public shared ({ caller }) func leaveConversation(conversationId : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can leave conversations");
+      Runtime.trap("Unauthorized: Only users can leave conversations");
     };
 
     switch (conversations.get(conversationId)) {
       case (?conv) {
         // Verify caller is participant
         if (conv.participants.find(func(p : Principal) : Bool { p == caller }) == null) {
-          Debug.trap("You are not a participant of this conversation");
+          Runtime.trap("You are not a participant of this conversation");
         };
 
         // Remove caller from participants
@@ -1555,7 +1723,7 @@ actor {
         };
       };
       case null {
-        Debug.trap("Conversation not found");
+        Runtime.trap("Conversation not found");
       };
     };
   };
@@ -2070,7 +2238,7 @@ actor {
 
   public query ({ caller }) func getConversations() : async [Conversation] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view conversations");
+      Runtime.trap("Unauthorized: Only users can view conversations");
     };
 
     let buffer = Buffer.Buffer<Conversation>(0);
@@ -2127,12 +2295,12 @@ actor {
   // Pin a post to the top of the Trending tab. Admin-only action.
   public shared ({ caller }) func pinPostToTrending(postId : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Debug.trap("Unauthorized: Only admins can pin posts to trending");
+      Runtime.trap("Unauthorized: Only admins can pin posts to trending");
     };
 
     switch (posts.get(postId)) {
       case null {
-        Debug.trap("Post not found");
+        Runtime.trap("Post not found");
       };
       case (?_) {};
     };
@@ -2143,7 +2311,7 @@ actor {
   // Unpin the currently pinned trending post. Admin-only action.
   public shared ({ caller }) func unpinTrendingPost() : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Debug.trap("Unauthorized: Only admins can unpin trending posts");
+      Runtime.trap("Unauthorized: Only admins can unpin trending posts");
     };
 
     pinnedTrendingPostId := null;
@@ -2152,7 +2320,7 @@ actor {
   // Get the currently pinned trending post. Any authenticated user can read.
   public query ({ caller }) func getPinnedTrendingPost() : async ?Post {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view the pinned trending post");
+      Runtime.trap("Unauthorized: Only authenticated users can view the pinned trending post");
     };
 
     switch (pinnedTrendingPostId) {
@@ -2224,7 +2392,7 @@ actor {
 
   public shared ({ caller }) func createPost(content : Text, image : ?Storage.ExternalBlob, embed : ?Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can create posts");
+      Runtime.trap("Unauthorized: Only users can create posts");
     };
 
     let post : Post = {
@@ -2242,13 +2410,13 @@ actor {
 
   public shared ({ caller }) func editPost(postId : Text, content : Text, image : ?Storage.ExternalBlob, embed : ?Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can edit posts");
+      Runtime.trap("Unauthorized: Only users can edit posts");
     };
 
     switch (posts.get(postId)) {
       case (?post) {
         if (post.author != caller) {
-          Debug.trap("Unauthorized: Only the post author can edit this post");
+          Runtime.trap("Unauthorized: Only the post author can edit this post");
         };
         let updatedPost = {
           post with
@@ -2259,20 +2427,20 @@ actor {
         posts.add(postId, updatedPost);
       };
       case null {
-        Debug.trap("Post not found");
+        Runtime.trap("Post not found");
       };
     };
   };
 
   public shared ({ caller }) func deletePost(postId : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can delete posts");
+      Runtime.trap("Unauthorized: Only users can delete posts");
     };
 
     switch (posts.get(postId)) {
       case (?post) {
         if (post.author != caller and not AccessControl.isAdmin(accessControlState, caller)) {
-          Debug.trap("Unauthorized: Only the post author or admin can delete this post");
+          Runtime.trap("Unauthorized: Only the post author or admin can delete this post");
         };
         posts.remove(postId);
         likesMap.remove(postId);
@@ -2292,7 +2460,7 @@ actor {
         };
       };
       case null {
-        Debug.trap("Post not found");
+        Runtime.trap("Post not found");
       };
     };
   };
@@ -2300,12 +2468,12 @@ actor {
   // Record a post view and increment viewCount (each caller counted only once per post).
   public shared ({ caller }) func recordPostView(postId : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can record post views");
+      Runtime.trap("Unauthorized: Only users can record post views");
     };
 
     switch (posts.get(postId)) {
       case null {
-        Debug.trap("Post not found");
+        Runtime.trap("Post not found");
       };
       case (?post) {
         // Only increment once per caller (use postViewersMap to track)
@@ -2332,7 +2500,7 @@ actor {
   // Return the view count for a post.
   public query ({ caller }) func getPostViewCount(postId : Text) : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view post counts");
+      Runtime.trap("Unauthorized: Only users can view post counts");
     };
 
     switch (posts.get(postId)) {
@@ -2343,17 +2511,17 @@ actor {
 
   public shared ({ caller }) func likePost(postId : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can like posts");
+      Runtime.trap("Unauthorized: Only users can like posts");
     };
 
     switch (posts.get(postId)) {
       case null {
-        Debug.trap("Post not found");
+        Runtime.trap("Post not found");
       };
       case (?post) {
         // Check blocking relationship
         if (hasBlockingRelationship(caller, post.author)) {
-          Debug.trap("Cannot like post: blocking relationship exists");
+          Runtime.trap("Cannot like post: blocking relationship exists");
         };
 
         let like : LikeInteraction = {
@@ -2390,12 +2558,12 @@ actor {
 
   public shared ({ caller }) func unlikePost(postId : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can unlike posts");
+      Runtime.trap("Unauthorized: Only users can unlike posts");
     };
 
     switch (posts.get(postId)) {
       case null {
-        Debug.trap("Post not found");
+        Runtime.trap("Post not found");
       };
       case (?_) {
         switch (likesMap.get(postId)) {
@@ -2410,17 +2578,17 @@ actor {
 
   public shared ({ caller }) func commentOnPost(postId : Text, comment : Text, parentCommentId : ?Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can comment on posts");
+      Runtime.trap("Unauthorized: Only users can comment on posts");
     };
 
     switch (posts.get(postId)) {
       case null {
-        Debug.trap("Post not found");
+        Runtime.trap("Post not found");
       };
       case (?post) {
         // Check blocking relationship
         if (hasBlockingRelationship(caller, post.author)) {
-          Debug.trap("Cannot comment on post: blocking relationship exists");
+          Runtime.trap("Cannot comment on post: blocking relationship exists");
         };
 
         let commentId = nextCommentId;
@@ -2454,7 +2622,7 @@ actor {
 
   public shared ({ caller }) func deleteComment(postId : Text, commentId : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can delete comments");
+      Runtime.trap("Unauthorized: Only users can delete comments");
     };
 
     switch (commentsMap.get(postId)) {
@@ -2463,18 +2631,18 @@ actor {
         switch (commentToDelete) {
           case (?comment) {
             if (comment.user != caller and not AccessControl.isAdmin(accessControlState, caller)) {
-              Debug.trap("Unauthorized: Only the comment author or admin can delete this comment");
+              Runtime.trap("Unauthorized: Only the comment author or admin can delete this comment");
             };
             let updatedComments = comments.filter(func(c : CommentInteraction) : Bool { c.id != commentId });
             commentsMap.add(postId, updatedComments);
           };
           case null {
-            Debug.trap("Comment not found");
+            Runtime.trap("Comment not found");
           };
         };
       };
       case null {
-        Debug.trap("No comments found for this post");
+        Runtime.trap("No comments found for this post");
       };
     };
   };
@@ -2482,7 +2650,7 @@ actor {
   public query ({ caller }) func getPostComments(postId : Text) : async [CommentInteraction] {
     // Require authentication to view comments
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view comments");
+      Runtime.trap("Unauthorized: Only authenticated users can view comments");
     };
 
     switch (commentsMap.get(postId)) {
@@ -2493,12 +2661,12 @@ actor {
 
   public shared ({ caller }) func savePost(postId : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can save posts");
+      Runtime.trap("Unauthorized: Only users can save posts");
     };
 
     switch (posts.get(postId)) {
       case null {
-        Debug.trap("Post not found");
+        Runtime.trap("Post not found");
       };
       case (?_) {
         let save : SaveInteraction = {
@@ -2527,12 +2695,12 @@ actor {
 
   public shared ({ caller }) func unsavePost(postId : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can unsave posts");
+      Runtime.trap("Unauthorized: Only users can unsave posts");
     };
 
     switch (posts.get(postId)) {
       case null {
-        Debug.trap("Post not found");
+        Runtime.trap("Post not found");
       };
       case (?_) {
         switch (savesMap.get(postId)) {
@@ -2547,7 +2715,7 @@ actor {
 
   public query ({ caller }) func getSavedPosts() : async [Post] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view saved posts");
+      Runtime.trap("Unauthorized: Only users can view saved posts");
     };
 
     let buffer = Buffer.Buffer<Post>(0);
@@ -2568,23 +2736,23 @@ actor {
 
   public shared ({ caller }) func forwardPostToConversation(postId : Text, conversationId : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can forward posts");
+      Runtime.trap("Unauthorized: Only users can forward posts");
     };
 
     switch (posts.get(postId)) {
       case null {
-        Debug.trap("Post not found");
+        Runtime.trap("Post not found");
       };
       case (?post) {
         switch (conversations.get(conversationId)) {
           case null {
-            Debug.trap("Conversation not found");
+            Runtime.trap("Conversation not found");
           };
           case (?conv) {
             let isParticipant = conv.participants.find(func(p : Principal) : Bool { p == caller });
             switch (isParticipant) {
               case null {
-                Debug.trap("Unauthorized: Only conversation participants can forward posts to it");
+                Runtime.trap("Unauthorized: Only conversation participants can forward posts to it");
               };
               case (?_) {
                 let postDetails = {
@@ -2617,25 +2785,25 @@ actor {
 
   public shared ({ caller }) func giftRosesOnPost(postId : Text, amount : Float) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can gift Roses on posts");
+      Runtime.trap("Unauthorized: Only users can gift Roses on posts");
     };
 
     if (amount < 0.01) {
-      Debug.trap("Minimum gift amount is 0.01 Rose");
+      Runtime.trap("Minimum gift amount is 0.01 Rose");
     };
 
     switch (posts.get(postId)) {
       case null {
-        Debug.trap("Post not found");
+        Runtime.trap("Post not found");
       };
       case (?post) {
         if (post.author == caller) {
-          Debug.trap("Cannot gift Roses to your own post");
+          Runtime.trap("Cannot gift Roses to your own post");
         };
 
         // Check blocking relationship
         if (hasBlockingRelationship(caller, post.author)) {
-          Debug.trap("Cannot gift Roses: blocking relationship exists");
+          Runtime.trap("Cannot gift Roses: blocking relationship exists");
         };
 
         let fee = giftRosesInternal(caller, post.author, amount);
@@ -2675,7 +2843,7 @@ actor {
   } {
     // Require authentication to view post interactions
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view post interactions");
+      Runtime.trap("Unauthorized: Only authenticated users can view post interactions");
     };
 
     let likesCount = switch (likesMap.get(postId)) {
@@ -2722,7 +2890,7 @@ actor {
   public query ({ caller }) func getPosts() : async [Post] {
     // Require authentication to view posts
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view posts");
+      Runtime.trap("Unauthorized: Only authenticated users can view posts");
     };
 
     let buffer = Buffer.Buffer<Post>(0);
@@ -2736,7 +2904,7 @@ actor {
 
   public query ({ caller }) func getCallerPosts() : async [Post] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view their own posts");
+      Runtime.trap("Unauthorized: Only users can view their own posts");
     };
 
     let buffer = Buffer.Buffer<Post>(0);
@@ -2751,12 +2919,12 @@ actor {
   public query ({ caller }) func getUserPosts(userId : Principal) : async [Post] {
     // Require authentication to view user posts
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view user posts");
+      Runtime.trap("Unauthorized: Only authenticated users can view user posts");
     };
 
     // Check blocking relationship
     if (hasBlockingRelationship(caller, userId)) {
-      Debug.trap("Cannot view posts: blocking relationship exists");
+      Runtime.trap("Cannot view posts: blocking relationship exists");
     };
 
     let buffer = Buffer.Buffer<Post>(0);
@@ -2803,7 +2971,7 @@ actor {
     };
 
     if (senderBalance < amount) {
-      Debug.trap("Insufficient balance to gift " # Float.toText(amount) # " Roses");
+      Runtime.trap("Insufficient balance to gift " # Float.toText(amount) # " Roses");
     };
 
     let fee = amount * 0.05;
@@ -2856,27 +3024,27 @@ actor {
 
   public shared ({ caller }) func giftRoses(receiver : Principal, amount : Float) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can gift Roses");
+      Runtime.trap("Unauthorized: Only users can gift Roses");
     };
 
     if (amount < 0.01) {
-      Debug.trap("Minimum gift amount is 0.01 Rose");
+      Runtime.trap("Minimum gift amount is 0.01 Rose");
     };
 
     switch (userProfiles.get(receiver)) {
       case null {
-        Debug.trap("Receiver profile not found");
+        Runtime.trap("Receiver profile not found");
       };
       case (?_) {};
     };
 
     if (caller == receiver) {
-      Debug.trap("Cannot gift Roses to yourself");
+      Runtime.trap("Cannot gift Roses to yourself");
     };
 
     // Check blocking relationship
     if (hasBlockingRelationship(caller, receiver)) {
-      Debug.trap("Cannot gift Roses: blocking relationship exists");
+      Runtime.trap("Cannot gift Roses: blocking relationship exists");
     };
 
     let fee = giftRosesInternal(caller, receiver, amount);
@@ -2890,11 +3058,11 @@ actor {
 
   public shared ({ caller }) func claimAllRoses() : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Debug.trap("Unauthorized: Only admin can claim all Roses");
+      Runtime.trap("Unauthorized: Only admin can claim all Roses");
     };
 
     if (not verifyAdminByUsername(caller)) {
-      Debug.trap("Unauthorized: Only admin with username 'rosalia' can claim Roses");
+      Runtime.trap("Unauthorized: Only admin with username 'rosalia' can claim Roses");
     };
 
     let currentAdminBalance = switch (roseBalances.get(caller)) {
@@ -2903,7 +3071,7 @@ actor {
     };
 
     if (currentAdminBalance >= totalRoseSupply) {
-      Debug.trap("Roses have already been claimed");
+      Runtime.trap("Roses have already been claimed");
     };
 
     roseBalances.add(caller, totalRoseSupply);
@@ -2925,20 +3093,20 @@ actor {
 
   public shared ({ caller }) func sellRosesToUser(buyer : Principal, amount : Float) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Debug.trap("Unauthorized: Only admin can sell Roses");
+      Runtime.trap("Unauthorized: Only admin can sell Roses");
     };
 
     if (not verifyAdminByUsername(caller)) {
-      Debug.trap("Unauthorized: Only admin with username 'rosalia' can sell Roses");
+      Runtime.trap("Unauthorized: Only admin with username 'rosalia' can sell Roses");
     };
 
     if (amount < 0.01) {
-      Debug.trap("Minimum sell amount is 0.01 Rose");
+      Runtime.trap("Minimum sell amount is 0.01 Rose");
     };
 
     switch (userProfiles.get(buyer)) {
       case null {
-        Debug.trap("Buyer profile not found");
+        Runtime.trap("Buyer profile not found");
       };
       case (?_) {};
     };
@@ -2949,7 +3117,7 @@ actor {
     };
 
     if (adminBalance < amount) {
-      Debug.trap("Admin does not have enough Roses to sell");
+      Runtime.trap("Admin does not have enough Roses to sell");
     };
 
     let buyerBalance = switch (roseBalances.get(buyer)) {
@@ -2976,20 +3144,20 @@ actor {
 
   public shared ({ caller }) func buyRosesFromUser(seller : Principal, amount : Float) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Debug.trap("Unauthorized: Only admin can buy Roses");
+      Runtime.trap("Unauthorized: Only admin can buy Roses");
     };
 
     if (not verifyAdminByUsername(caller)) {
-      Debug.trap("Unauthorized: Only admin with username 'rosalia' can buy Roses");
+      Runtime.trap("Unauthorized: Only admin with username 'rosalia' can buy Roses");
     };
 
     if (amount < 0.01) {
-      Debug.trap("Minimum buy amount is 0.01 Rose");
+      Runtime.trap("Minimum buy amount is 0.01 Rose");
     };
 
     switch (userProfiles.get(seller)) {
       case null {
-        Debug.trap("Seller profile not found");
+        Runtime.trap("Seller profile not found");
       };
       case (?_) {};
     };
@@ -3000,7 +3168,7 @@ actor {
     };
 
     if (sellerBalance < amount) {
-      Debug.trap("Seller does not have enough Roses to sell");
+      Runtime.trap("Seller does not have enough Roses to sell");
     };
 
     let adminBalance = switch (roseBalances.get(caller)) {
@@ -3027,16 +3195,16 @@ actor {
 
   public shared ({ caller }) func requestBuyRoses(amount : Float) : async Text {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can request to buy Roses");
+      Runtime.trap("Unauthorized: Only users can request to buy Roses");
     };
 
     if (amount < 0.01) {
-      Debug.trap("Minimum purchase amount is 0.01 Rose");
+      Runtime.trap("Minimum purchase amount is 0.01 Rose");
     };
 
     switch (getAdminPrincipal(adminUsername)) {
       case null {
-        Debug.trap("Admin 'rosalia' not found. Please contact customer support.");
+        Runtime.trap("Admin 'rosalia' not found. Please contact customer support.");
       };
       case (?adminPrincipal) {
         let tradeRequest = createTradeRequestMessage(caller, amount, "BUY");
@@ -3050,11 +3218,11 @@ actor {
 
   public shared ({ caller }) func requestSellRoses(amount : Float) : async Text {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can request to sell Roses");
+      Runtime.trap("Unauthorized: Only users can request to sell Roses");
     };
 
     if (amount < 0.01) {
-      Debug.trap("Minimum sell amount is 0.01 Rose");
+      Runtime.trap("Minimum sell amount is 0.01 Rose");
     };
 
     let userBalance = switch (roseBalances.get(caller)) {
@@ -3063,12 +3231,12 @@ actor {
     };
 
     if (userBalance < amount) {
-      Debug.trap("Insufficient balance to sell " # Float.toText(amount) # " Roses");
+      Runtime.trap("Insufficient balance to sell " # Float.toText(amount) # " Roses");
     };
 
     switch (getAdminPrincipal(adminUsername)) {
       case null {
-        Debug.trap("Admin 'rosalia' not found. Please contact customer support.");
+        Runtime.trap("Admin 'rosalia' not found. Please contact customer support.");
       };
       case (?adminPrincipal) {
         let tradeRequest = createTradeRequestMessage(caller, amount, "SELL");
@@ -3082,7 +3250,7 @@ actor {
 
   public query ({ caller }) func getRoseBalance() : async Float {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can check Rose balance");
+      Runtime.trap("Unauthorized: Only users can check Rose balance");
     };
 
     switch (roseBalances.get(caller)) {
@@ -3094,7 +3262,7 @@ actor {
   public query ({ caller }) func getTotalCirculatingRoses() : async Float {
     // Require authentication to view total circulating Roses
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view total circulating Roses");
+      Runtime.trap("Unauthorized: Only authenticated users can view total circulating Roses");
     };
 
     totalCirculatingRoses;
@@ -3102,7 +3270,7 @@ actor {
 
   public query ({ caller }) func getRoseTransactionHistory() : async [RoseTransaction] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view transaction history");
+      Runtime.trap("Unauthorized: Only users can view transaction history");
     };
 
     roseTransactions.filter(
@@ -3122,7 +3290,7 @@ actor {
   public query ({ caller }) func getUserRoseBalance(user : Principal) : async Float {
     // Require authentication to view user balances
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view user balances");
+      Runtime.trap("Unauthorized: Only authenticated users can view user balances");
     };
 
     switch (roseBalances.get(user)) {
@@ -3137,7 +3305,7 @@ actor {
     feeRewards : Float;
   } {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view summary");
+      Runtime.trap("Unauthorized: Only users can view summary");
     };
 
     let userBalance = switch (roseBalances.get(caller)) {
@@ -3186,7 +3354,7 @@ actor {
 
   public query ({ caller }) func getAnalyticsSummary() : async AnalyticsSummary {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only authenticated users can view analytics");
+      Runtime.trap("Unauthorized: Only authenticated users can view analytics");
     };
 
     let totalUsers = userProfiles.size();
@@ -3346,12 +3514,12 @@ actor {
 
   public query ({ caller }) func getAllRoseTransactions() : async [RoseTransaction] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Debug.trap("Unauthorized: Only admins can view all transactions");
+      Runtime.trap("Unauthorized: Only admins can view all transactions");
     };
 
     // Additional verification for admin username
     if (not verifyAdminByUsername(caller)) {
-      Debug.trap("Unauthorized: Only admin with username 'rosalia' can view all transactions");
+      Runtime.trap("Unauthorized: Only admin with username 'rosalia' can view all transactions");
     };
 
     roseTransactions;
@@ -3359,12 +3527,12 @@ actor {
 
   public query ({ caller }) func getAllUserProfiles() : async [(Principal, UserProfile)] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Debug.trap("Unauthorized: Only admins can view all user profiles");
+      Runtime.trap("Unauthorized: Only admins can view all user profiles");
     };
 
     // Additional verification for admin username
     if (not verifyAdminByUsername(caller)) {
-      Debug.trap("Unauthorized: Only admin with username 'rosalia' can view all user profiles");
+      Runtime.trap("Unauthorized: Only admin with username 'rosalia' can view all user profiles");
     };
 
     let buffer = Buffer.Buffer<(Principal, UserProfile)>(0);
@@ -3383,14 +3551,14 @@ actor {
 
   public shared ({ caller }) func setStripeConfiguration(config : Stripe.StripeConfiguration) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Debug.trap("Unauthorized: Only admins can perform this action");
+      Runtime.trap("Unauthorized: Only admins can perform this action");
     };
     stripeConfig := ?config;
   };
 
   func getStripeConfiguration() : Stripe.StripeConfiguration {
     switch (stripeConfig) {
-      case null Debug.trap("Stripe needs to be first configured");
+      case null Runtime.trap("Stripe needs to be first configured");
       case (?value) value;
     };
   };
@@ -3401,7 +3569,7 @@ actor {
 
   public shared ({ caller }) func createCheckoutSession(items : [Stripe.ShoppingItem], successUrl : Text, cancelUrl : Text) : async Text {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can create checkout sessions");
+      Runtime.trap("Unauthorized: Only users can create checkout sessions");
     };
     await Stripe.createCheckoutSession(getStripeConfiguration(), caller, items, successUrl, cancelUrl, transform);
   };
@@ -3423,7 +3591,7 @@ actor {
 
   public shared ({ caller }) func getIcpUsdExchangeRate() : async Float {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can fetch exchange rates");
+      Runtime.trap("Unauthorized: Only users can fetch exchange rates");
     };
 
     let updateNeeded = shouldUpdateExchangeRate();
@@ -3526,7 +3694,7 @@ actor {
 
   public query ({ caller }) func filterProfiles(filter : ProfileFilter) : async [ProfileWithPrincipal] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can filter profiles");
+      Runtime.trap("Unauthorized: Only users can filter profiles");
     };
 
     let currentYear = 2024;
@@ -3597,7 +3765,7 @@ actor {
 
   public shared ({ caller }) func convertBalanceToUsd(amount : Float) : async Float {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can convert balances");
+      Runtime.trap("Unauthorized: Only users can convert balances");
     };
 
     let exchangeRate = switch (shouldUpdateExchangeRate()) {
@@ -3617,7 +3785,7 @@ actor {
 
   public query ({ caller }) func convertBalanceToUsdQuery(amount : Float) : async Float {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can convert balances");
+      Runtime.trap("Unauthorized: Only users can convert balances");
     };
 
     switch (icpUsdExchangeRate) {
@@ -3656,7 +3824,7 @@ actor {
 
   public query ({ caller }) func universalSearch(searchTerm : Text, maxResults : ?Nat) : async [SearchResult] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can perform search");
+      Runtime.trap("Unauthorized: Only users can perform search");
     };
 
     if (searchTerm.size() == 0) {
@@ -3863,7 +4031,7 @@ actor {
     total : Nat;
   } {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can fetch notifications");
+      Runtime.trap("Unauthorized: Only users can fetch notifications");
     };
 
     let effectiveLimit = if (limit == 0) { 6 } else { limit };
@@ -3890,7 +4058,7 @@ actor {
 
   public query ({ caller }) func getUnreadNotificationCount() : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can fetch notification count");
+      Runtime.trap("Unauthorized: Only users can fetch notification count");
     };
 
     switch (notificationsMap.get(caller)) {
@@ -3909,7 +4077,7 @@ actor {
 
   public shared ({ caller }) func markNotificationAsRead(notificationId : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can mark notifications as read");
+      Runtime.trap("Unauthorized: Only users can mark notifications as read");
     };
 
     switch (notificationsMap.get(caller)) {
@@ -3931,7 +4099,7 @@ actor {
 
   public shared ({ caller }) func markAllNotificationsAsRead() : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can mark all notifications as read");
+      Runtime.trap("Unauthorized: Only users can mark all notifications as read");
     };
 
     switch (notificationsMap.get(caller)) {
@@ -3945,7 +4113,7 @@ actor {
 
   public shared ({ caller }) func deleteNotification(notificationId : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can delete notifications");
+      Runtime.trap("Unauthorized: Only users can delete notifications");
     };
 
     switch (notificationsMap.get(caller)) {
@@ -3959,7 +4127,7 @@ actor {
 
   public shared ({ caller }) func clearAllNotifications() : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can clear all notifications");
+      Runtime.trap("Unauthorized: Only users can clear all notifications");
     };
 
     notificationsMap.remove(caller);
@@ -3984,7 +4152,7 @@ actor {
 
   public query ({ caller }) func getNotificationCountByType() : async NotificationCount {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can fetch notification count");
+      Runtime.trap("Unauthorized: Only users can fetch notification count");
     };
 
     var unreadCount = 0;
@@ -4551,7 +4719,7 @@ actor {
   // Call this from the frontend every ~60 seconds to keep presence alive.
   public shared ({ caller }) func updateLastActive() : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can update presence");
+      Runtime.trap("Unauthorized: Only users can update presence");
     };
     lastActiveMap.add(caller, Time.now());
   };
@@ -4559,7 +4727,7 @@ actor {
   // Returns true if the given user was active within the last 5 minutes.
   public query ({ caller }) func isOnline(userId : Principal) : async Bool {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can check online status");
+      Runtime.trap("Unauthorized: Only users can check online status");
     };
     switch (lastActiveMap.get(userId)) {
       case null { false };
@@ -4570,7 +4738,7 @@ actor {
   // Returns all principals that were active within the last 5 minutes.
   public query ({ caller }) func getOnlineUsers() : async [Principal] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Debug.trap("Unauthorized: Only users can view online users");
+      Runtime.trap("Unauthorized: Only users can view online users");
     };
     let now = Time.now();
     let buffer = Buffer.Buffer<Principal>(0);
@@ -4580,6 +4748,442 @@ actor {
       };
     };
     Buffer.toArray(buffer);
+  };
+
+  // ── Bulk Read Receipts ────────────────────────────────────────────────────
+
+  // Mark ALL messages in a direct conversation as read by the caller.
+  // This is called when the user opens a conversation — all messages become seen.
+  public shared ({ caller }) func markConversationRead(conversationId : Nat) : async { #ok; #err : Text } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      return #err("Unauthorized");
+    };
+
+    let conv = switch (conversations.get(conversationId)) {
+      case null { return #err("Conversation not found") };
+      case (?c) c;
+    };
+
+    // Verify caller is a participant
+    if (conv.participants.find(func(p : Principal) : Bool { p == caller }) == null) {
+      return #err("Unauthorized: Only conversation participants can mark messages as read");
+    };
+
+    let updatedMessages = conv.messages.map(func(msg : Message) : Message {
+      // Only mark messages sent by others (not by the caller)
+      if (msg.sender != caller) {
+        let alreadyRead = msg.readBy.find(func(p : Principal) : Bool { p == caller }) != null;
+        if (alreadyRead) {
+          msg
+        } else {
+          { msg with readBy = msg.readBy.concat([caller]) }
+        }
+      } else {
+        msg
+      }
+    });
+
+    conversations.add(conversationId, { conv with messages = updatedMessages });
+    #ok
+  };
+
+  // Mark ALL messages in a group chat as read by the caller.
+  public shared ({ caller }) func markGroupChatRead(groupId : Nat) : async { #ok; #err : Text } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      return #err("Unauthorized");
+    };
+
+    if (not isGroupParticipant(groupId, caller)) {
+      return #err("Unauthorized: Only group participants can mark messages as read");
+    };
+
+    let messages = switch (groupMessages.get(groupId)) {
+      case null { return #ok }; // No messages yet — nothing to mark
+      case (?msgs) msgs;
+    };
+
+    let updatedMessages = messages.map(func(msg : GroupMessage) : GroupMessage {
+      if (msg.sender != caller) {
+        let alreadyRead = msg.readBy.find(func(p : Principal) : Bool { p == caller }) != null;
+        if (alreadyRead) {
+          msg
+        } else {
+          { msg with readBy = msg.readBy.concat([caller]) }
+        }
+      } else {
+        msg
+      }
+    });
+
+    groupMessages.add(groupId, updatedMessages);
+    #ok
+  };
+
+  // ── Unread Counts ─────────────────────────────────────────────────────────
+
+  public type DirectUnreadCount = {
+    conversationId : Nat;
+    unreadCount : Nat;
+  };
+
+  public type GroupUnreadCount = {
+    groupId : Nat;
+    unreadCount : Nat;
+  };
+
+  public type UnreadCounts = {
+    direct : [DirectUnreadCount];
+    groups : [GroupUnreadCount];
+  };
+
+  // Returns unread message counts for all direct conversations and group chats.
+  // Unread = message where sender != caller AND caller NOT in readBy.
+  public query ({ caller }) func getUnreadCounts() : async UnreadCounts {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view unread counts");
+    };
+
+    let directBuffer = Buffer.Buffer<DirectUnreadCount>(0);
+    for ((convId, conv) in conversations.entries()) {
+      if (conv.participants.find(func(p : Principal) : Bool { p == caller }) != null) {
+        var count = 0;
+        for (msg in conv.messages.vals()) {
+          if (msg.sender != caller) {
+            let hasRead = msg.readBy.find(func(p : Principal) : Bool { p == caller }) != null;
+            if (not hasRead) {
+              count += 1;
+            };
+          };
+        };
+        if (count > 0) {
+          directBuffer.add({ conversationId = convId; unreadCount = count });
+        };
+      };
+    };
+
+    let groupBuffer = Buffer.Buffer<GroupUnreadCount>(0);
+    switch (userGroups.get(caller)) {
+      case null {};
+      case (?groupIds) {
+        for (groupId in groupIds.vals()) {
+          var count = 0;
+          switch (groupMessages.get(groupId)) {
+            case null {};
+            case (?msgs) {
+              for (msg in msgs.vals()) {
+                if (msg.sender != caller) {
+                  let hasRead = msg.readBy.find(func(p : Principal) : Bool { p == caller }) != null;
+                  if (not hasRead) {
+                    count += 1;
+                  };
+                };
+              };
+            };
+          };
+          if (count > 0) {
+            groupBuffer.add({ groupId; unreadCount = count });
+          };
+        };
+      };
+    };
+
+    {
+      direct = Buffer.toArray(directBuffer);
+      groups = Buffer.toArray(groupBuffer);
+    };
+  };
+
+  // ── Typing Indicators ────────────────────────────────────────────────────
+
+  // Stores typing state: conversationId -> [(principal, timestamp)]
+  var typingMap = Map.empty<Nat, [(Principal, Int)]>();
+
+  // Stores group typing state: groupId -> [(principal, timestamp)]
+  var groupTypingMap = Map.empty<Nat, [(Principal, Int)]>();
+
+  // 5 seconds in nanoseconds — typing state expires after this
+  let typingExpiry : Int = 5 * 1_000_000_000;
+
+  // Set or clear the caller's typing indicator in a direct conversation.
+  public shared ({ caller }) func setTyping(conversationId : Nat, isTyping : Bool) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can set typing indicators");
+    };
+
+    let conv = switch (conversations.get(conversationId)) {
+      case null { Runtime.trap("Conversation not found") };
+      case (?c) c;
+    };
+
+    if (conv.participants.find(func(p : Principal) : Bool { p == caller }) == null) {
+      Runtime.trap("Unauthorized: Only conversation participants can set typing");
+    };
+
+    let now = Time.now();
+    let existing = switch (typingMap.get(conversationId)) {
+      case null { [] };
+      case (?entries) entries;
+    };
+
+    // Remove stale entries and the caller's existing entry
+    let filtered = existing.filter(func((p, ts) : (Principal, Int)) : Bool {
+      p != caller and (now - ts) <= typingExpiry
+    });
+
+    if (isTyping) {
+      typingMap.add(conversationId, filtered.concat([(caller, now)]));
+    } else {
+      typingMap.add(conversationId, filtered);
+    };
+  };
+
+  // Returns principals currently typing in a direct conversation (active within last 5 seconds).
+  public query ({ caller }) func getTypingUsers(conversationId : Nat) : async [Principal] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view typing indicators");
+    };
+
+    let now = Time.now();
+    switch (typingMap.get(conversationId)) {
+      case null { [] };
+      case (?entries) {
+        let buffer = Buffer.Buffer<Principal>(0);
+        for ((p, ts) in entries.vals()) {
+          if (p != caller and (now - ts) <= typingExpiry) {
+            buffer.add(p);
+          };
+        };
+        Buffer.toArray(buffer);
+      };
+    };
+  };
+
+  // Set or clear the caller's typing indicator in a group chat.
+  public shared ({ caller }) func setGroupTyping(groupId : Nat, isTyping : Bool) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can set typing indicators");
+    };
+
+    if (not isGroupParticipant(groupId, caller)) {
+      Runtime.trap("Unauthorized: Only group participants can set typing");
+    };
+
+    let now = Time.now();
+    let existing = switch (groupTypingMap.get(groupId)) {
+      case null { [] };
+      case (?entries) entries;
+    };
+
+    let filtered = existing.filter(func((p, ts) : (Principal, Int)) : Bool {
+      p != caller and (now - ts) <= typingExpiry
+    });
+
+    if (isTyping) {
+      groupTypingMap.add(groupId, filtered.concat([(caller, now)]));
+    } else {
+      groupTypingMap.add(groupId, filtered);
+    };
+  };
+
+  // Returns principals currently typing in a group chat (active within last 5 seconds).
+  public query ({ caller }) func getGroupTypingUsers(groupId : Nat) : async [Principal] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view typing indicators");
+    };
+
+    if (not isGroupParticipant(groupId, caller)) {
+      Runtime.trap("Unauthorized: Only group participants can view typing indicators");
+    };
+
+    let now = Time.now();
+    switch (groupTypingMap.get(groupId)) {
+      case null { [] };
+      case (?entries) {
+        let buffer = Buffer.Buffer<Principal>(0);
+        for ((p, ts) in entries.vals()) {
+          if (p != caller and (now - ts) <= typingExpiry) {
+            buffer.add(p);
+          };
+        };
+        Buffer.toArray(buffer);
+      };
+    };
+  };
+
+  // ── Message Pinning ─────────────────────────────────────────────────────
+
+  /// Find the conversation ID for a direct chat between caller and other.
+  func findConversationIdByPair(a : Principal, b : Principal) : ?Nat {
+    for ((id, conv) in conversations.entries()) {
+      if (conv.participants.size() == 2) {
+        let p0 = conv.participants[0];
+        let p1 = conv.participants[1];
+        if ((p0 == a and p1 == b) or (p0 == b and p1 == a)) {
+          return ?id;
+        };
+      };
+    };
+    null;
+  };
+
+  /// Pin a message in a direct conversation. Any participant can pin.
+  /// Replaces any previously pinned message.
+  public shared ({ caller }) func pinConversationMessage(other : Principal, messageId : Nat) : async { #ok; #err : Text } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      return #err("Unauthorized");
+    };
+
+    let convId = switch (findConversationIdByPair(caller, other)) {
+      case null { return #err("Conversation not found") };
+      case (?id) id;
+    };
+
+    let conv = switch (conversations.get(convId)) {
+      case null { return #err("Conversation not found") };
+      case (?c) c;
+    };
+
+    // Verify caller is a participant
+    if (conv.participants.find(func(p : Principal) : Bool { p == caller }) == null) {
+      return #err("Unauthorized: Only conversation participants can pin messages");
+    };
+
+    // Verify message exists in this conversation
+    let msgExists = conv.messages.find(func(m : Message) : Bool { m.id == messageId }) != null;
+    if (not msgExists) {
+      return #err("Message not found in this conversation");
+    };
+
+    conversationPinnedMessages.add(convId, messageId);
+    #ok;
+  };
+
+  /// Unpin the currently pinned message in a direct conversation. Any participant can unpin.
+  public shared ({ caller }) func unpinConversationMessage(other : Principal) : async { #ok; #err : Text } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      return #err("Unauthorized");
+    };
+
+    let convId = switch (findConversationIdByPair(caller, other)) {
+      case null { return #err("Conversation not found") };
+      case (?id) id;
+    };
+
+    let conv = switch (conversations.get(convId)) {
+      case null { return #err("Conversation not found") };
+      case (?c) c;
+    };
+
+    if (conv.participants.find(func(p : Principal) : Bool { p == caller }) == null) {
+      return #err("Unauthorized: Only conversation participants can unpin messages");
+    };
+
+    conversationPinnedMessages.remove(convId);
+    #ok;
+  };
+
+  /// Returns the pinned message for a direct conversation, or null if none is pinned.
+  public query ({ caller }) func getPinnedConversationMessage(other : Principal) : async ?Message {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized");
+    };
+
+    let convId = switch (findConversationIdByPair(caller, other)) {
+      case null { return null };
+      case (?id) id;
+    };
+
+    let conv = switch (conversations.get(convId)) {
+      case null { return null };
+      case (?c) c;
+    };
+
+    if (conv.participants.find(func(p : Principal) : Bool { p == caller }) == null) {
+      return null;
+    };
+
+    let pinnedId = switch (conversationPinnedMessages.get(convId)) {
+      case null { return null };
+      case (?pid) pid;
+    };
+
+    conv.messages.find(func(m : Message) : Bool { m.id == pinnedId });
+  };
+
+  /// Pin a message in a group chat. Only group creator or admins can pin.
+  /// Replaces any previously pinned message.
+  public shared ({ caller }) func pinGroupMessage(groupId : Nat, messageId : Nat) : async { #ok; #err : Text } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      return #err("Unauthorized");
+    };
+
+    let group = switch (groupChats.get(groupId)) {
+      case null { return #err("Group not found") };
+      case (?g) g;
+    };
+
+    // Only creator or admins can pin
+    let isAdmin = group.admins.find(func(p : Principal) : Bool { p == caller }) != null;
+    if (not isAdmin) {
+      return #err("Unauthorized: Only group admins can pin messages");
+    };
+
+    // Verify message exists in this group
+    let msgs = switch (groupMessages.get(groupId)) {
+      case null { return #err("No messages in this group") };
+      case (?m) m;
+    };
+
+    let msgExists = msgs.find(func(m : GroupMessage) : Bool { m.id == messageId }) != null;
+    if (not msgExists) {
+      return #err("Message not found in this group");
+    };
+
+    groupPinnedMessages.add(groupId, messageId);
+    #ok;
+  };
+
+  /// Unpin the currently pinned message in a group chat. Only group creator or admins can unpin.
+  public shared ({ caller }) func unpinGroupMessage(groupId : Nat) : async { #ok; #err : Text } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      return #err("Unauthorized");
+    };
+
+    let group = switch (groupChats.get(groupId)) {
+      case null { return #err("Group not found") };
+      case (?g) g;
+    };
+
+    let isAdmin = group.admins.find(func(p : Principal) : Bool { p == caller }) != null;
+    if (not isAdmin) {
+      return #err("Unauthorized: Only group admins can unpin messages");
+    };
+
+    groupPinnedMessages.remove(groupId);
+    #ok;
+  };
+
+  /// Returns the pinned group message, or null if none is pinned.
+  public query ({ caller }) func getPinnedGroupMessage(groupId : Nat) : async ?GroupMessage {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized");
+    };
+
+    if (not isGroupParticipant(groupId, caller)) {
+      return null;
+    };
+
+    let pinnedId = switch (groupPinnedMessages.get(groupId)) {
+      case null { return null };
+      case (?pid) pid;
+    };
+
+    let msgs = switch (groupMessages.get(groupId)) {
+      case null { return null };
+      case (?m) m;
+    };
+
+    msgs.find(func(m : GroupMessage) : Bool { m.id == pinnedId });
   };
 
 };

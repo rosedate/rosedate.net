@@ -1,15 +1,16 @@
 // migration.mo
-// Safe upgrade migration for Rose Dating backend.
-// Adds optional email and emailPreferences fields to UserProfile.
+// Migrates actor state to add caption and reactions fields to Story,
+// and initializes the new storyGiftsMap field.
+
 import Map "mo:core/Map";
-import Principal "mo:core/Principal";
 
 module {
-  // ── Shared primitive types ───────────────────────────────────────────────────
+  // ── Shared primitive aliases ────────────────────────────────────────────────
   type Time = Int;
+  // ExternalBlob = Blob (as defined by caffeineai-object-storage/Storage.mo)
   type ExternalBlob = Blob;
 
-  // ── Inline type definitions (cannot import main.mo) ─────────────────────────
+  // ── Duplicated types from main.mo (cannot import main.mo) ──────────────────
 
   type UserRole = {
     #admin;
@@ -22,18 +23,6 @@ module {
     userRoles : Map.Map<Principal, UserRole>;
   };
 
-  // Old UserProfile (without email and emailPreferences)
-  type OldUserProfile = {
-    name : Text;
-    username : Text;
-    country : Text;
-    gender : ?Text;
-    birthYear : ?Nat;
-    bio : ?Text;
-    profilePicture : ?ExternalBlob;
-  };
-
-  // New UserProfile (with email and emailPreferences)
   type EmailPreferences = {
     message : Bool;
     roseGift : Bool;
@@ -49,7 +38,7 @@ module {
     groupAdd : Bool;
   };
 
-  type NewUserProfile = {
+  type UserProfile = {
     name : Text;
     username : Text;
     country : Text;
@@ -59,6 +48,12 @@ module {
     profilePicture : ?ExternalBlob;
     email : ?Text;
     emailPreferences : ?EmailPreferences;
+  };
+
+  type BlockRecord = {
+    blocker : Principal;
+    blocked : Principal;
+    timestamp : Time;
   };
 
   type ReceiptMessage = {
@@ -96,7 +91,8 @@ module {
     };
   };
 
-  type Story = {
+  // Old Story type — no caption or reactions fields
+  type OldStory = {
     id : Nat;
     author : Principal;
     content : MessageType;
@@ -104,6 +100,71 @@ module {
     expiresAt : Time;
     viewedBy : [Principal];
     viewCount : Nat;
+  };
+
+  // New Story type — with caption and reactions
+  type NewStory = {
+    id : Nat;
+    author : Principal;
+    content : MessageType;
+    timestamp : Time;
+    expiresAt : Time;
+    viewedBy : [Principal];
+    viewCount : Nat;
+    caption : ?Text;
+    reactions : [(Text, [Principal])];
+  };
+
+  type RoseGiftOnStory = {
+    storyId : Nat;
+    gifter : Principal;
+    amount : Float;
+    timestamp : Time;
+  };
+
+  type GroupChat = {
+    id : Nat;
+    name : Text;
+    creator : Principal;
+    admins : [Principal];
+    participants : [Principal];
+    avatar : ?ExternalBlob;
+    createdAt : Time;
+  };
+
+  type GroupMessage = {
+    id : Nat;
+    groupId : Nat;
+    sender : Principal;
+    content : MessageType;
+    timestamp : Time;
+    senderProfile : ?UserProfile;
+    isEdited : Bool;
+    isDeleted : Bool;
+    reactions : [(Text, [Principal])];
+    readBy : [Principal];
+    replyToId : ?Nat;
+  };
+
+  type Message = {
+    id : Nat;
+    sender : Principal;
+    receiver : Principal;
+    content : MessageType;
+    timestamp : Time;
+    senderProfile : ?UserProfile;
+    isEdited : Bool;
+    isDeleted : Bool;
+    reactions : [(Text, [Principal])];
+    readBy : [Principal];
+    replyToId : ?Nat;
+  };
+
+  type Conversation = {
+    id : Nat;
+    participants : [Principal];
+    messages : [Message];
+    otherParticipantProfile : ?UserProfile;
   };
 
   type Post = {
@@ -114,12 +175,6 @@ module {
     image : ?ExternalBlob;
     embed : ?Text;
     viewCount : Nat;
-  };
-
-  type BlockRecord = {
-    blocker : Principal;
-    blocked : Principal;
-    timestamp : Time;
   };
 
   type LikeInteraction = {
@@ -157,88 +212,6 @@ module {
     timestamp : Time;
   };
 
-  type OldGroupChat = {
-    id : Nat;
-    name : Text;
-    creator : Principal;
-    admins : [Principal];
-    participants : [Principal];
-    avatar : ?ExternalBlob;
-    createdAt : Time;
-  };
-
-  type OldGroupMessage = {
-    id : Nat;
-    groupId : Nat;
-    sender : Principal;
-    content : MessageType;
-    timestamp : Time;
-    senderProfile : ?OldUserProfile;
-    isEdited : Bool;
-    isDeleted : Bool;
-    reactions : [(Text, [Principal])];
-    readBy : [Principal];
-    replyToId : ?Nat;
-  };
-
-  type OldMessage = {
-    id : Nat;
-    sender : Principal;
-    receiver : Principal;
-    content : MessageType;
-    timestamp : Time;
-    senderProfile : ?OldUserProfile;
-    isEdited : Bool;
-    isDeleted : Bool;
-    reactions : [(Text, [Principal])];
-    readBy : [Principal];
-    replyToId : ?Nat;
-  };
-
-  type OldConversation = {
-    id : Nat;
-    participants : [Principal];
-    messages : [OldMessage];
-    otherParticipantProfile : ?OldUserProfile;
-  };
-
-  type NewGroupChat = OldGroupChat;
-
-  type NewGroupMessage = {
-    id : Nat;
-    groupId : Nat;
-    sender : Principal;
-    content : MessageType;
-    timestamp : Time;
-    senderProfile : ?NewUserProfile;
-    isEdited : Bool;
-    isDeleted : Bool;
-    reactions : [(Text, [Principal])];
-    readBy : [Principal];
-    replyToId : ?Nat;
-  };
-
-  type NewMessage = {
-    id : Nat;
-    sender : Principal;
-    receiver : Principal;
-    content : MessageType;
-    timestamp : Time;
-    senderProfile : ?NewUserProfile;
-    isEdited : Bool;
-    isDeleted : Bool;
-    reactions : [(Text, [Principal])];
-    readBy : [Principal];
-    replyToId : ?Nat;
-  };
-
-  type NewConversation = {
-    id : Nat;
-    participants : [Principal];
-    messages : [NewMessage];
-    otherParticipantProfile : ?NewUserProfile;
-  };
-
   type RoseTransactionType = {
     #gift;
     #buy;
@@ -258,6 +231,17 @@ module {
     feeDistributed : Float;
   };
 
+  type Notification = {
+    id : Nat;
+    userId : Principal;
+    notificationType : NotificationType;
+    content : Text;
+    timestamp : Time;
+    isRead : Bool;
+    linkedId : ?Text;
+    linkedType : ?Text;
+  };
+
   type NotificationType = {
     #message;
     #roseGift;
@@ -273,233 +257,204 @@ module {
     #groupAdd;
   };
 
-  type Notification = {
-    id : Nat;
-    userId : Principal;
-    notificationType : NotificationType;
-    content : Text;
-    timestamp : Time;
-    isRead : Bool;
-    linkedId : ?Text;
-    linkedType : ?Text;
+  type StripeConfiguration = {
+    secretKey : Text;
+    allowedCountries : [Text];
   };
 
-  // ── OldActor: previous stable state shape ────────────────────────────────────
+  // ── Actor state shapes ──────────────────────────────────────────────────────
+
+  // OldActor: state as it was before this upgrade.
+  // Stories used the old type (no caption/reactions).
+  // storyGiftsMap did not exist yet.
   public type OldActor = {
-    // Authorization component state
     accessControlState : AccessControlState;
 
-    // User profiles & social graph
-    userProfiles : Map.Map<Principal, OldUserProfile>;
-    followersMap : Map.Map<Principal, [Principal]>;
-    followingMap : Map.Map<Principal, [Principal]>;
-    blockListMap : Map.Map<Principal, [Principal]>;
-    blockRecords : [BlockRecord];
+    // User profiles
+    var userProfiles : Map.Map<Principal, UserProfile>;
+    var followersMap : Map.Map<Principal, [Principal]>;
+    var followingMap : Map.Map<Principal, [Principal]>;
+    var blockListMap : Map.Map<Principal, [Principal]>;
+    var blockRecords : [BlockRecord];
 
-    // Stories
-    nextStoryId : Nat;
-    stories : Map.Map<Nat, Story>;
-    userStories : Map.Map<Principal, [Nat]>;
-    pinnedStories : Map.Map<Principal, [Nat]>;
+    // Stories — old type without caption/reactions; no storyGiftsMap
+    var nextStoryId : Nat;
+    var stories : Map.Map<Nat, OldStory>;
+    var userStories : Map.Map<Principal, [Nat]>;
+    var pinnedStories : Map.Map<Principal, [Nat]>;
 
     // Group chats
-    nextGroupId : Nat;
-    nextGroupMessageId : Nat;
-    groupChats : Map.Map<Nat, OldGroupChat>;
-    groupMessages : Map.Map<Nat, [OldGroupMessage]>;
-    userGroups : Map.Map<Principal, [Nat]>;
+    var nextGroupId : Nat;
+    var nextGroupMessageId : Nat;
+    var groupChats : Map.Map<Nat, GroupChat>;
+    var groupMessages : Map.Map<Nat, [GroupMessage]>;
+    var userGroups : Map.Map<Principal, [Nat]>;
 
     // Direct conversations
-    nextMessageId : Nat;
-    nextConversationId : Nat;
-    conversations : Map.Map<Nat, OldConversation>;
+    var nextMessageId : Nat;
+    var nextConversationId : Nat;
+    var conversations : Map.Map<Nat, Conversation>;
+    var conversationPinnedMessages : Map.Map<Nat, Nat>;
+    var groupPinnedMessages : Map.Map<Nat, Nat>;
 
     // Posts
-    posts : Map.Map<Text, Post>;
-    pinnedTrendingPostId : ?Text;
-    nextCommentId : Nat;
-    likesMap : Map.Map<Text, [LikeInteraction]>;
-    commentsMap : Map.Map<Text, [CommentInteraction]>;
-    savesMap : Map.Map<Text, [SaveInteraction]>;
-    forwardsMap : Map.Map<Text, [ForwardInteraction]>;
-    postRoseGiftsMap : Map.Map<Text, [RoseGiftOnPost]>;
-    postViewersMap : Map.Map<Text, [Principal]>;
+    var posts : Map.Map<Text, Post>;
+    var pinnedTrendingPostId : ?Text;
+    var nextCommentId : Nat;
+    var likesMap : Map.Map<Text, [LikeInteraction]>;
+    var commentsMap : Map.Map<Text, [CommentInteraction]>;
+    var savesMap : Map.Map<Text, [SaveInteraction]>;
+    var forwardsMap : Map.Map<Text, [ForwardInteraction]>;
+    var postRoseGiftsMap : Map.Map<Text, [RoseGiftOnPost]>;
+    var postViewersMap : Map.Map<Text, [Principal]>;
 
     // Rose economy
-    nextRoseTransactionId : Nat;
-    roseTransactions : [RoseTransaction];
-    roseBalances : Map.Map<Principal, Float>;
-    totalCirculatingRoses : Float;
+    var nextRoseTransactionId : Nat;
+    var roseTransactions : [RoseTransaction];
+    var roseBalances : Map.Map<Principal, Float>;
+    var totalCirculatingRoses : Float;
 
-    // Exchange rate cache
-    icpUsdExchangeRate : ?Float;
-    lastExchangeRateUpdate : ?Time;
+    // Payment
+    var stripeConfig : ?StripeConfiguration;
+
+    // External integrations
+    var icpUsdExchangeRate : ?Float;
+    var lastExchangeRateUpdate : ?Time;
 
     // Notifications
-    nextNotificationId : Nat;
-    notificationsMap : Map.Map<Principal, [Notification]>;
+    var nextNotificationId : Nat;
+    var notificationsMap : Map.Map<Principal, [Notification]>;
 
     // Online presence
-    lastActiveMap : Map.Map<Principal, Int>;
+    var lastActiveMap : Map.Map<Principal, Int>;
+
+    // Typing indicators
+    var typingMap : Map.Map<Nat, [(Principal, Int)]>;
+    var groupTypingMap : Map.Map<Nat, [(Principal, Int)]>;
   };
 
-  // ── NewActor: adds email/emailPreferences to UserProfile ─────────────────────
+  // NewActor: state after this upgrade.
+  // Stories use the new type (with caption/reactions).
+  // storyGiftsMap is present.
   public type NewActor = {
     accessControlState : AccessControlState;
-    userProfiles : Map.Map<Principal, NewUserProfile>;
-    followersMap : Map.Map<Principal, [Principal]>;
-    followingMap : Map.Map<Principal, [Principal]>;
-    blockListMap : Map.Map<Principal, [Principal]>;
-    blockRecords : [BlockRecord];
-    nextStoryId : Nat;
-    stories : Map.Map<Nat, Story>;
-    userStories : Map.Map<Principal, [Nat]>;
-    pinnedStories : Map.Map<Principal, [Nat]>;
-    nextGroupId : Nat;
-    nextGroupMessageId : Nat;
-    groupChats : Map.Map<Nat, NewGroupChat>;
-    groupMessages : Map.Map<Nat, [NewGroupMessage]>;
-    userGroups : Map.Map<Principal, [Nat]>;
-    nextMessageId : Nat;
-    nextConversationId : Nat;
-    conversations : Map.Map<Nat, NewConversation>;
-    posts : Map.Map<Text, Post>;
-    pinnedTrendingPostId : ?Text;
-    nextCommentId : Nat;
-    likesMap : Map.Map<Text, [LikeInteraction]>;
-    commentsMap : Map.Map<Text, [CommentInteraction]>;
-    savesMap : Map.Map<Text, [SaveInteraction]>;
-    forwardsMap : Map.Map<Text, [ForwardInteraction]>;
-    postRoseGiftsMap : Map.Map<Text, [RoseGiftOnPost]>;
-    postViewersMap : Map.Map<Text, [Principal]>;
-    nextRoseTransactionId : Nat;
-    roseTransactions : [RoseTransaction];
-    roseBalances : Map.Map<Principal, Float>;
-    totalCirculatingRoses : Float;
-    icpUsdExchangeRate : ?Float;
-    lastExchangeRateUpdate : ?Time;
-    nextNotificationId : Nat;
-    notificationsMap : Map.Map<Principal, [Notification]>;
-    lastActiveMap : Map.Map<Principal, Int>;
+
+    // User profiles
+    var userProfiles : Map.Map<Principal, UserProfile>;
+    var followersMap : Map.Map<Principal, [Principal]>;
+    var followingMap : Map.Map<Principal, [Principal]>;
+    var blockListMap : Map.Map<Principal, [Principal]>;
+    var blockRecords : [BlockRecord];
+
+    // Stories — new type with caption/reactions; storyGiftsMap added
+    var nextStoryId : Nat;
+    var stories : Map.Map<Nat, NewStory>;
+    var userStories : Map.Map<Principal, [Nat]>;
+    var pinnedStories : Map.Map<Principal, [Nat]>;
+    var storyGiftsMap : Map.Map<Nat, [RoseGiftOnStory]>;
+
+    // Group chats
+    var nextGroupId : Nat;
+    var nextGroupMessageId : Nat;
+    var groupChats : Map.Map<Nat, GroupChat>;
+    var groupMessages : Map.Map<Nat, [GroupMessage]>;
+    var userGroups : Map.Map<Principal, [Nat]>;
+
+    // Direct conversations
+    var nextMessageId : Nat;
+    var nextConversationId : Nat;
+    var conversations : Map.Map<Nat, Conversation>;
+    var conversationPinnedMessages : Map.Map<Nat, Nat>;
+    var groupPinnedMessages : Map.Map<Nat, Nat>;
+
+    // Posts
+    var posts : Map.Map<Text, Post>;
+    var pinnedTrendingPostId : ?Text;
+    var nextCommentId : Nat;
+    var likesMap : Map.Map<Text, [LikeInteraction]>;
+    var commentsMap : Map.Map<Text, [CommentInteraction]>;
+    var savesMap : Map.Map<Text, [SaveInteraction]>;
+    var forwardsMap : Map.Map<Text, [ForwardInteraction]>;
+    var postRoseGiftsMap : Map.Map<Text, [RoseGiftOnPost]>;
+    var postViewersMap : Map.Map<Text, [Principal]>;
+
+    // Rose economy
+    var nextRoseTransactionId : Nat;
+    var roseTransactions : [RoseTransaction];
+    var roseBalances : Map.Map<Principal, Float>;
+    var totalCirculatingRoses : Float;
+
+    // Payment
+    var stripeConfig : ?StripeConfiguration;
+
+    // External integrations
+    var icpUsdExchangeRate : ?Float;
+    var lastExchangeRateUpdate : ?Time;
+
+    // Notifications
+    var nextNotificationId : Nat;
+    var notificationsMap : Map.Map<Principal, [Notification]>;
+
+    // Online presence
+    var lastActiveMap : Map.Map<Principal, Int>;
+
+    // Typing indicators
+    var typingMap : Map.Map<Nat, [(Principal, Int)]>;
+    var groupTypingMap : Map.Map<Nat, [(Principal, Int)]>;
   };
 
-  // Helper: upgrade OldUserProfile to NewUserProfile (null email/prefs)
-  func upgradeProfile(old : OldUserProfile) : NewUserProfile {
-    {
-      name = old.name;
-      username = old.username;
-      country = old.country;
-      gender = old.gender;
-      birthYear = old.birthYear;
-      bio = old.bio;
-      profilePicture = old.profilePicture;
-      email = null;
-      emailPreferences = null;
-    };
-  };
-
-  func upgradeOptProfile(old : ?OldUserProfile) : ?NewUserProfile {
-    switch (old) {
-      case null null;
-      case (?p) ?upgradeProfile(p);
-    };
-  };
-
-  func upgradeMessage(old : OldMessage) : NewMessage {
-    {
-      id = old.id;
-      sender = old.sender;
-      receiver = old.receiver;
-      content = old.content;
-      timestamp = old.timestamp;
-      senderProfile = upgradeOptProfile(old.senderProfile);
-      isEdited = old.isEdited;
-      isDeleted = old.isDeleted;
-      reactions = old.reactions;
-      readBy = old.readBy;
-      replyToId = old.replyToId;
-    };
-  };
-
-  func upgradeConversation(old : OldConversation) : NewConversation {
-    {
-      id = old.id;
-      participants = old.participants;
-      messages = old.messages.map(upgradeMessage);
-      otherParticipantProfile = upgradeOptProfile(old.otherParticipantProfile);
-    };
-  };
-
-  func upgradeGroupMessage(old : OldGroupMessage) : NewGroupMessage {
-    {
-      id = old.id;
-      groupId = old.groupId;
-      sender = old.sender;
-      content = old.content;
-      timestamp = old.timestamp;
-      senderProfile = upgradeOptProfile(old.senderProfile);
-      isEdited = old.isEdited;
-      isDeleted = old.isDeleted;
-      reactions = old.reactions;
-      readBy = old.readBy;
-      replyToId = old.replyToId;
-    };
-  };
-
-  // ── Migration: upgrade all UserProfile records in the state ──────────────────
+  // Migrate: add caption=null and reactions=[] to every story;
+  // initialize storyGiftsMap as an empty map.
   public func run(old : OldActor) : NewActor {
-    let newUserProfiles = Map.empty<Principal, NewUserProfile>();
-    for ((principal, profile) in old.userProfiles.entries()) {
-      newUserProfiles.add(principal, upgradeProfile(profile));
-    };
-
-    let newConversations = Map.empty<Nat, NewConversation>();
-    for ((convId, conv) in old.conversations.entries()) {
-      newConversations.add(convId, upgradeConversation(conv));
-    };
-
-    let newGroupMessages = Map.empty<Nat, [NewGroupMessage]>();
-    for ((groupId, msgs) in old.groupMessages.entries()) {
-      newGroupMessages.add(groupId, msgs.map(upgradeGroupMessage));
-    };
-
+    let migratedStories = old.stories.map<Nat, OldStory, NewStory>(
+      func(_id, s) {
+        { s with caption = null; reactions = [] }
+      }
+    );
+    let newStoryGiftsMap = Map.empty<Nat, [RoseGiftOnStory]>();
     {
       accessControlState = old.accessControlState;
-      userProfiles = newUserProfiles;
-      followersMap = old.followersMap;
-      followingMap = old.followingMap;
-      blockListMap = old.blockListMap;
-      blockRecords = old.blockRecords;
-      nextStoryId = old.nextStoryId;
-      stories = old.stories;
-      userStories = old.userStories;
-      pinnedStories = old.pinnedStories;
-      nextGroupId = old.nextGroupId;
-      nextGroupMessageId = old.nextGroupMessageId;
-      groupChats = old.groupChats;
-      groupMessages = newGroupMessages;
-      userGroups = old.userGroups;
-      nextMessageId = old.nextMessageId;
-      nextConversationId = old.nextConversationId;
-      conversations = newConversations;
-      posts = old.posts;
-      pinnedTrendingPostId = old.pinnedTrendingPostId;
-      nextCommentId = old.nextCommentId;
-      likesMap = old.likesMap;
-      commentsMap = old.commentsMap;
-      savesMap = old.savesMap;
-      forwardsMap = old.forwardsMap;
-      postRoseGiftsMap = old.postRoseGiftsMap;
-      postViewersMap = old.postViewersMap;
-      nextRoseTransactionId = old.nextRoseTransactionId;
-      roseTransactions = old.roseTransactions;
-      roseBalances = old.roseBalances;
-      totalCirculatingRoses = old.totalCirculatingRoses;
-      icpUsdExchangeRate = old.icpUsdExchangeRate;
-      lastExchangeRateUpdate = old.lastExchangeRateUpdate;
-      nextNotificationId = old.nextNotificationId;
-      notificationsMap = old.notificationsMap;
-      lastActiveMap = old.lastActiveMap;
-    };
+      var userProfiles = old.userProfiles;
+      var followersMap = old.followersMap;
+      var followingMap = old.followingMap;
+      var blockListMap = old.blockListMap;
+      var blockRecords = old.blockRecords;
+      var nextStoryId = old.nextStoryId;
+      var stories = migratedStories;
+      var userStories = old.userStories;
+      var pinnedStories = old.pinnedStories;
+      var storyGiftsMap = newStoryGiftsMap;
+      var nextGroupId = old.nextGroupId;
+      var nextGroupMessageId = old.nextGroupMessageId;
+      var groupChats = old.groupChats;
+      var groupMessages = old.groupMessages;
+      var userGroups = old.userGroups;
+      var nextMessageId = old.nextMessageId;
+      var nextConversationId = old.nextConversationId;
+      var conversations = old.conversations;
+      var conversationPinnedMessages = old.conversationPinnedMessages;
+      var groupPinnedMessages = old.groupPinnedMessages;
+      var posts = old.posts;
+      var pinnedTrendingPostId = old.pinnedTrendingPostId;
+      var nextCommentId = old.nextCommentId;
+      var likesMap = old.likesMap;
+      var commentsMap = old.commentsMap;
+      var savesMap = old.savesMap;
+      var forwardsMap = old.forwardsMap;
+      var postRoseGiftsMap = old.postRoseGiftsMap;
+      var postViewersMap = old.postViewersMap;
+      var nextRoseTransactionId = old.nextRoseTransactionId;
+      var roseTransactions = old.roseTransactions;
+      var roseBalances = old.roseBalances;
+      var totalCirculatingRoses = old.totalCirculatingRoses;
+      var stripeConfig = old.stripeConfig;
+      var icpUsdExchangeRate = old.icpUsdExchangeRate;
+      var lastExchangeRateUpdate = old.lastExchangeRateUpdate;
+      var nextNotificationId = old.nextNotificationId;
+      var notificationsMap = old.notificationsMap;
+      var lastActiveMap = old.lastActiveMap;
+      var typingMap = old.typingMap;
+      var groupTypingMap = old.groupTypingMap;
+    }
   };
 };
