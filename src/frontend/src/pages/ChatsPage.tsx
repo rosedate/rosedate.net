@@ -4,6 +4,8 @@ import { ChevronDown, MessageCircle, Plus, Users } from "lucide-react";
 import React, { useState } from "react";
 import CreateGroupChatModal from "../components/CreateGroupChatModal";
 import CreateStoryModal from "../components/CreateStoryModal";
+import { LazyImage } from "../components/LazyImage";
+import { ShimmerSkeleton } from "../components/ShimmerSkeleton";
 import StoriesCarousel from "../components/StoriesCarousel";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
@@ -173,8 +175,8 @@ export default function ChatsPage() {
                 key={i}
                 className="flex-shrink-0 flex flex-col items-center gap-1"
               >
-                <div className="w-16 h-16 rounded-full bg-muted animate-pulse" />
-                <div className="w-12 h-2 bg-muted animate-pulse rounded" />
+                <ShimmerSkeleton className="w-16 h-16 rounded-full" />
+                <ShimmerSkeleton className="w-12 h-2 rounded" />
               </div>
             ))}
           </div>
@@ -220,10 +222,10 @@ export default function ChatsPage() {
           <div className="space-y-2 px-4">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="flex items-center gap-3 p-2">
-                <div className="w-12 h-12 rounded-full bg-muted animate-pulse" />
+                <ShimmerSkeleton className="w-12 h-12 rounded-full" />
                 <div className="flex-1 space-y-1">
-                  <div className="h-3 bg-muted animate-pulse rounded w-1/2" />
-                  <div className="h-2 bg-muted animate-pulse rounded w-3/4" />
+                  <ShimmerSkeleton className="h-3 w-1/2 rounded" />
+                  <ShimmerSkeleton className="h-2 w-3/4 rounded" />
                 </div>
               </div>
             ))}
@@ -253,10 +255,11 @@ export default function ChatsPage() {
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted/60 transition-colors text-left"
                   >
                     <div className="relative flex-shrink-0">
-                      <img
+                      <LazyImage
                         src={getAvatarUrl(profile)}
                         alt={profile?.name || "User"}
                         className="w-12 h-12 rounded-full object-cover border-2 border-primary/20"
+                        wrapperClassName="w-12 h-12 rounded-full"
                       />
                       {/* Unread count badge */}
                       {hasUnread && (
@@ -336,10 +339,10 @@ export default function ChatsPage() {
           <div className="space-y-2 px-4">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="flex items-center gap-3 p-2">
-                <div className="w-12 h-12 rounded-full bg-muted animate-pulse" />
+                <ShimmerSkeleton className="w-12 h-12 rounded-full" />
                 <div className="flex-1 space-y-1">
-                  <div className="h-3 bg-muted animate-pulse rounded w-1/2" />
-                  <div className="h-2 bg-muted animate-pulse rounded w-1/3" />
+                  <ShimmerSkeleton className="h-3 w-1/2 rounded" />
+                  <ShimmerSkeleton className="h-2 w-1/3 rounded" />
                 </div>
               </div>
             ))}
@@ -367,10 +370,11 @@ export default function ChatsPage() {
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted/60 transition-colors text-left"
                   >
                     <div className="relative flex-shrink-0">
-                      <img
+                      <LazyImage
                         src={getGroupAvatarUrl(group)}
                         alt={group.name}
                         className="w-12 h-12 rounded-full object-cover border-2 border-primary/20"
+                        wrapperClassName="w-12 h-12 rounded-full"
                       />
                       {hasGroupUnread && (
                         <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-primary text-primary-foreground rounded-full text-[10px] font-bold flex items-center justify-center px-1 border-2 border-background">

@@ -150,6 +150,7 @@ export interface EmailPreferences {
     roseReceipt: boolean;
     tradeRequest: boolean;
     systemNotice: boolean;
+    storyReaction: boolean;
     storyView: boolean;
     like: boolean;
     comment: boolean;
@@ -348,6 +349,7 @@ export interface NotificationCount {
     messageCount: bigint;
     roseReceiptCount: bigint;
     commentCount: bigint;
+    storyReactionCount: bigint;
     tradeRequestCount: bigint;
     postGiftCount: bigint;
     groupMessageCount: bigint;
@@ -409,6 +411,7 @@ export enum NotificationType {
     roseReceipt = "roseReceipt",
     tradeRequest = "tradeRequest",
     systemNotice = "systemNotice",
+    storyReaction = "storyReaction",
     storyView = "storyView",
     like = "like",
     comment = "comment",
@@ -3524,6 +3527,8 @@ function from_candid_variant_n70(_uploadFile: (file: ExternalBlob) => Promise<Ui
 } | {
     systemNotice: null;
 } | {
+    storyReaction: null;
+} | {
     storyView: null;
 } | {
     like: null;
@@ -3538,7 +3543,7 @@ function from_candid_variant_n70(_uploadFile: (file: ExternalBlob) => Promise<Ui
 } | {
     follow: null;
 }): NotificationType {
-    return "postGift" in value ? NotificationType.postGift : "groupMessage" in value ? NotificationType.groupMessage : "roseReceipt" in value ? NotificationType.roseReceipt : "tradeRequest" in value ? NotificationType.tradeRequest : "systemNotice" in value ? NotificationType.systemNotice : "storyView" in value ? NotificationType.storyView : "like" in value ? NotificationType.like : "comment" in value ? NotificationType.comment : "groupAdd" in value ? NotificationType.groupAdd : "message" in value ? NotificationType.message : "roseGift" in value ? NotificationType.roseGift : "follow" in value ? NotificationType.follow : value;
+    return "postGift" in value ? NotificationType.postGift : "groupMessage" in value ? NotificationType.groupMessage : "roseReceipt" in value ? NotificationType.roseReceipt : "tradeRequest" in value ? NotificationType.tradeRequest : "systemNotice" in value ? NotificationType.systemNotice : "storyReaction" in value ? NotificationType.storyReaction : "storyView" in value ? NotificationType.storyView : "like" in value ? NotificationType.like : "comment" in value ? NotificationType.comment : "groupAdd" in value ? NotificationType.groupAdd : "message" in value ? NotificationType.message : "roseGift" in value ? NotificationType.roseGift : "follow" in value ? NotificationType.follow : value;
 }
 function from_candid_variant_n78(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     completed: {

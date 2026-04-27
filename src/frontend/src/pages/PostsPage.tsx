@@ -7,7 +7,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useNavigate } from "@tanstack/react-router";
@@ -28,7 +27,9 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { CommentInteraction, Post } from "../backend";
 import { ExternalBlob } from "../backend";
+import { LazyImage } from "../components/LazyImage";
 import RoseGiftModal from "../components/RoseGiftModal";
+import { ShimmerSkeleton } from "../components/ShimmerSkeleton";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useCommentOnPost,
@@ -435,7 +436,7 @@ function CommentsModal({
           {isLoading && (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-12 w-full rounded-lg" />
+                <ShimmerSkeleton key={i} className="h-12 w-full rounded-lg" />
               ))}
             </div>
           )}
@@ -652,10 +653,11 @@ function PostCard({
       {/* Image */}
       {imageUrl && (
         <div className="mb-3 rounded-xl overflow-hidden">
-          <img
+          <LazyImage
             src={imageUrl}
-            alt="Post"
+            alt="Post image"
             className="w-full object-cover max-h-80"
+            wrapperClassName="rounded-xl overflow-hidden"
           />
         </div>
       )}
@@ -946,22 +948,23 @@ export default function PostsPage() {
   const visibleAllPosts = sortedAllPosts.slice(0, allVisible);
   const visibleFollowedPosts = sortedFollowedPosts.slice(0, followedVisible);
 
+  // Loading skeletons with shimmer effect matching real card structure
   const renderSkeletons = () => (
     <div className="space-y-4">
       {[1, 2, 3].map((i) => (
         <div
           key={i}
-          className="bg-card border border-border/50 rounded-2xl p-4 space-y-3"
+          className="bg-card border border-border/50 rounded-2xl p-4 space-y-3 animate-fade-in"
         >
           <div className="flex items-center gap-2.5">
-            <Skeleton className="w-9 h-9 rounded-full" />
-            <div className="space-y-1">
-              <Skeleton className="h-3 w-24 rounded" />
-              <Skeleton className="h-2.5 w-16 rounded" />
+            <ShimmerSkeleton className="w-9 h-9 rounded-full" />
+            <div className="space-y-1.5">
+              <ShimmerSkeleton className="h-3 w-24 rounded" />
+              <ShimmerSkeleton className="h-2.5 w-16 rounded" />
             </div>
           </div>
-          <Skeleton className="h-16 w-full rounded-xl" />
-          <Skeleton className="h-8 w-full rounded-xl" />
+          <ShimmerSkeleton className="h-16 w-full rounded-xl" />
+          <ShimmerSkeleton className="h-8 w-full rounded-xl" />
         </div>
       ))}
     </div>

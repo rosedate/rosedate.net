@@ -188,3 +188,15 @@
     }
   }
 }
+
+/* Suppress native video seek/timeline bar in story viewer so it doesn't bleed over reaction counts */
+.story-video::-webkit-media-controls-timeline {
+  display: none !important;
+}
+.story-video::-webkit-media-controls-current-time-display,
+.story-video::-webkit-media-controls-time-remaining-display {
+  display: none !important;
+}
+.story-video::-webkit-media-controls-panel {
+  background: transparent !important;
+}

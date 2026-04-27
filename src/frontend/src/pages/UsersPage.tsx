@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,13 +10,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import type { Principal } from "@icp-sdk/core/principal";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ChevronDown, Filter, MessageCircle, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { LazyImage } from "../components/LazyImage";
+import { ShimmerSkeleton } from "../components/ShimmerSkeleton";
 import { useFilterProfiles } from "../hooks/useQueries";
 
 const PAGE_SIZE = 49;
@@ -230,13 +231,13 @@ export default function UsersPage() {
             <Card key={i}>
               <CardContent className="p-4 sm:p-6">
                 <div className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
-                  <Skeleton className="h-12 w-12 sm:h-16 sm:w-16 rounded-full shrink-0" />
+                  <ShimmerSkeleton className="h-12 w-12 sm:h-16 sm:w-16 rounded-full" />
                   <div className="space-y-2 flex-1">
-                    <Skeleton className="h-4 w-full max-w-[120px]" />
-                    <Skeleton className="h-3 w-full max-w-[80px]" />
+                    <ShimmerSkeleton className="h-4 w-full max-w-[120px]" />
+                    <ShimmerSkeleton className="h-3 w-full max-w-[80px]" />
                   </div>
                 </div>
-                <Skeleton className="h-20 w-full" />
+                <ShimmerSkeleton className="h-20 w-full" />
               </CardContent>
             </Card>
           ))}
@@ -254,16 +255,20 @@ export default function UsersPage() {
                     className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4 cursor-pointer"
                     onClick={() => handleProfileClick(profileData.principal)}
                   >
-                    <Avatar className="h-12 w-12 sm:h-16 sm:w-16 shrink-0 hover:shadow-rose-glow transition-shadow">
-                      {profileData.profile.profilePicture ? (
-                        <AvatarImage
-                          src={profileData.profile.profilePicture.getDirectURL()}
-                        />
-                      ) : null}
-                      <AvatarFallback className="text-base sm:text-lg">
-                        {profileData.profile.name.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
+                    {profileData.profile.profilePicture ? (
+                      <LazyImage
+                        src={profileData.profile.profilePicture.getDirectURL()}
+                        alt={profileData.profile.name}
+                        wrapperClassName="h-12 w-12 sm:h-16 sm:w-16 shrink-0 rounded-full hover:shadow-rose-glow transition-shadow"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Avatar className="h-12 w-12 sm:h-16 sm:w-16 shrink-0 hover:shadow-rose-glow transition-shadow">
+                        <AvatarFallback className="text-base sm:text-lg">
+                          {profileData.profile.name.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                    )}
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-sm sm:text-base truncate">
                         {profileData.profile.name}

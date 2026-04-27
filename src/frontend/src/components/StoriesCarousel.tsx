@@ -449,7 +449,7 @@ function StoryReactionCounts({ storyId }: { storyId: bigint }) {
   if (totals.length === 0) return null;
 
   return (
-    <div className="flex gap-1.5 justify-center py-1.5 flex-wrap px-4">
+    <div className="relative z-20 flex gap-1.5 justify-center py-1.5 flex-wrap px-4">
       {totals.map(({ emoji, count }) => (
         <div
           key={emoji}
@@ -496,11 +496,12 @@ function EnhancedVideoPlayer({
   return (
     <video
       ref={videoRef}
-      className="max-w-full max-h-[80vh] mx-auto block"
+      className="story-video max-w-full max-h-[80vh] mx-auto block [&::-webkit-media-controls-timeline]:hidden [&::-webkit-media-controls-panel]:bg-transparent"
       controls
       playsInline
       muted={autoPlay}
       preload="metadata"
+      style={{ WebkitAppearance: "none" }}
     />
   );
 }

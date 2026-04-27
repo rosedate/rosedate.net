@@ -49,6 +49,7 @@ export interface EmailPreferences {
   'roseReceipt' : boolean,
   'tradeRequest' : boolean,
   'systemNotice' : boolean,
+  'storyReaction' : boolean,
   'storyView' : boolean,
   'like' : boolean,
   'comment' : boolean,
@@ -133,6 +134,7 @@ export interface NotificationCount {
   'messageCount' : bigint,
   'roseReceiptCount' : bigint,
   'commentCount' : bigint,
+  'storyReactionCount' : bigint,
   'tradeRequestCount' : bigint,
   'postGiftCount' : bigint,
   'groupMessageCount' : bigint,
@@ -142,6 +144,7 @@ export type NotificationType = { 'postGift' : null } |
   { 'roseReceipt' : null } |
   { 'tradeRequest' : null } |
   { 'systemNotice' : null } |
+  { 'storyReaction' : null } |
   { 'storyView' : null } |
   { 'like' : null } |
   { 'comment' : null } |

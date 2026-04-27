@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   DollarSign,
+  Eye,
   Heart,
   MessageCircle,
   UserPlus,
@@ -67,6 +68,8 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
         return <DollarSign className="h-4 w-4 text-amber-500" />;
       case NotificationType.tradeRequest:
         return <DollarSign className="h-4 w-4 text-purple-500" />;
+      case NotificationType.storyView:
+        return <Eye className="h-4 w-4 text-rose-400" />;
       case NotificationType.systemNotice:
         return <Bell className="h-4 w-4 text-muted-foreground" />;
       default:
@@ -117,7 +120,8 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
           n.notificationType === NotificationType.like ||
           n.notificationType === NotificationType.comment ||
           n.notificationType === NotificationType.follow ||
-          n.notificationType === NotificationType.postGift,
+          n.notificationType === NotificationType.postGift ||
+          n.notificationType === NotificationType.storyView,
       );
     }
     if (type === "system") {

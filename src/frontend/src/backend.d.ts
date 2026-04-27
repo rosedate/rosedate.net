@@ -75,6 +75,7 @@ export interface EmailPreferences {
     roseReceipt: boolean;
     tradeRequest: boolean;
     systemNotice: boolean;
+    storyReaction: boolean;
     storyView: boolean;
     like: boolean;
     comment: boolean;
@@ -262,6 +263,7 @@ export interface NotificationCount {
     messageCount: bigint;
     roseReceiptCount: bigint;
     commentCount: bigint;
+    storyReactionCount: bigint;
     tradeRequestCount: bigint;
     postGiftCount: bigint;
     groupMessageCount: bigint;
@@ -323,6 +325,7 @@ export enum NotificationType {
     roseReceipt = "roseReceipt",
     tradeRequest = "tradeRequest",
     systemNotice = "systemNotice",
+    storyReaction = "storyReaction",
     storyView = "storyView",
     like = "like",
     comment = "comment",

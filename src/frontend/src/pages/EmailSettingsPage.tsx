@@ -27,6 +27,7 @@ const DEFAULT_PREFS: EmailPreferences = {
   postGift: true,
   roseReceipt: true,
   storyView: false,
+  storyReaction: true,
   groupMessage: true,
   groupAdd: true,
 };
@@ -90,6 +91,11 @@ const NOTIFICATION_LABELS: {
     key: "storyView",
     label: "Story views",
     description: "When someone views your story",
+  },
+  {
+    key: "storyReaction",
+    label: "Story reactions",
+    description: "When someone reacts to your story",
   },
   {
     key: "systemNotice",

@@ -209,6 +209,7 @@ type NotificationType =
    postGift;
    roseGift;
    roseReceipt;
+   storyReaction;
    storyView;
    systemNotice;
    tradeRequest;
@@ -224,6 +225,7 @@ type NotificationCount =
    postGiftCount: nat;
    roseGiftCount: nat;
    roseReceiptCount: nat;
+   storyReactionCount: nat;
    storyViewCount: nat;
    systemCount: nat;
    totalCount: nat;
@@ -321,6 +323,7 @@ type EmailPreferences =
    postGift: bool;
    roseGift: bool;
    roseReceipt: bool;
+   storyReaction: bool;
    storyView: bool;
    systemNotice: bool;
    tradeRequest: bool;

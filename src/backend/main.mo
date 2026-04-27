@@ -16,9 +16,9 @@ import Int "mo:core/Int";
 import Buffer "mo:base/Buffer";
 import Runtime "mo:core/Runtime";
 import Iter "mo:core/Iter";
-import Migration "migration";
 
-(with migration = Migration.run)
+
+
 actor {
   // Authorization
   let accessControlState = AccessControl.initState();
@@ -37,6 +37,7 @@ actor {
     postGift : Bool;
     roseReceipt : Bool;
     storyView : Bool;
+    storyReaction : Bool;
     groupMessage : Bool;
     groupAdd : Bool;
   };
@@ -852,6 +853,12 @@ actor {
 
         let updatedStory : Story = { story with reactions = finalReactions };
         stories.add(storyId, updatedStory);
+
+        // Notify the story author if the reactor is not the author
+        if (story.author != caller) {
+          ignore createStoryReactionNotification(caller, story.author, storyId, emoji);
+        };
+
         #ok
       };
     };
@@ -3994,6 +4001,7 @@ actor {
     #postGift;
     #roseReceipt;
     #storyView;
+    #storyReaction;
     #groupMessage;
     #groupAdd;
   };
@@ -4146,6 +4154,7 @@ actor {
     postGiftCount : Nat;
     roseReceiptCount : Nat;
     storyViewCount : Nat;
+    storyReactionCount : Nat;
     groupMessageCount : Nat;
     groupAddCount : Nat;
   };
@@ -4167,6 +4176,7 @@ actor {
     var postGiftCount = 0;
     var roseReceiptCount = 0;
     var storyViewCount = 0;
+    var storyReactionCount = 0;
     var groupMessageCount = 0;
     var groupAddCount = 0;
 
@@ -4188,6 +4198,7 @@ actor {
             case (#postGift) postGiftCount += 1;
             case (#roseReceipt) roseReceiptCount += 1;
             case (#storyView) storyViewCount += 1;
+            case (#storyReaction) storyReactionCount += 1;
             case (#groupMessage) groupMessageCount += 1;
             case (#groupAdd) groupAddCount += 1;
           };
@@ -4209,6 +4220,7 @@ actor {
       postGiftCount;
       roseReceiptCount;
       storyViewCount;
+      storyReactionCount;
       groupMessageCount;
       groupAddCount;
     };
@@ -4391,6 +4403,24 @@ actor {
           "rosedate",
           [email],
           "Someone viewed your story on Rose Dating",
+          content # "\n\nVisit https://rosedate.net",
+        );
+      };
+      case null {};
+    };
+  };
+
+  func createStoryReactionNotification(reactor : Principal, storyAuthor : Principal, storyId : Nat, emoji : Text) : async () {
+    let reactorUsername = getUsername(reactor);
+    let content = reactorUsername # " reacted " # emoji # " to your story";
+    let notification = createNotification(storyAuthor, #storyReaction, content, ?storyId.toText(), ?"story");
+    addNotification(notification);
+    switch (shouldSendEmail(storyAuthor, func(p) { p.storyReaction })) {
+      case (?email) {
+        ignore await EmailClient.sendServiceEmail(
+          "rosedate",
+          [email],
+          "Someone reacted to your story on Rose Dating",
           content # "\n\nVisit https://rosedate.net",
         );
       };
