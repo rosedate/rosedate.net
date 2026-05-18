@@ -4,12 +4,10 @@ import { BarChart2, Search } from "lucide-react";
 import { useState } from "react";
 import { useGetUnreadNotificationCount } from "../hooks/useQueries";
 import NotificationPanel from "./NotificationPanel";
-import QRCodeModal from "./QRCodeModal";
 
 export default function TopNav() {
   const navigate = useNavigate();
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showQRModal, setShowQRModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { data: unreadCount = 0n } = useGetUnreadNotificationCount();
 
@@ -55,19 +53,6 @@ export default function TopNav() {
 
           {/* Right Side Icons */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-            {/* QR Code Button */}
-            <button
-              onClick={() => setShowQRModal(true)}
-              className="h-8 w-8 sm:h-10 sm:w-10 flex items-center justify-center rounded-full hover:bg-primary/10 transition-all hover:shadow-rose-glow-sm"
-              title="QR Code"
-            >
-              <img
-                src="/assets/generated/qr-code-icon-transparent.dim_24x24.png"
-                alt="QR Code"
-                className="h-4 w-4 sm:h-5 sm:w-5"
-              />
-            </button>
-
             {/* Analytics Button */}
             <button
               onClick={() => navigate({ to: "/analytics" })}
@@ -117,7 +102,6 @@ export default function TopNav() {
       {showNotifications && (
         <NotificationPanel onClose={() => setShowNotifications(false)} />
       )}
-      <QRCodeModal open={showQRModal} onClose={() => setShowQRModal(false)} />
     </>
   );
 }

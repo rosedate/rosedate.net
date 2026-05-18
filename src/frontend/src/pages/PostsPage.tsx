@@ -43,7 +43,7 @@ import {
   useGetPostInteractions,
   useGetPosts,
   useGetPostsFromFollowedUsers,
-  useGetRoseBalance,
+  useGetRoseSummary,
   useGetUserProfile,
   useGiftRosesOnPost,
   useLikePost,
@@ -234,12 +234,13 @@ function PostAuthorAvatar({ authorId }: { authorId: string }) {
   const avatarUrl = profile?.profilePicture
     ? profile.profilePicture.getDirectURL()
     : null;
+  const profileTarget = profile?.username || authorId;
 
   return (
     <Avatar
       className="w-9 h-9 cursor-pointer ring-2 ring-primary/20 hover:ring-primary/60 transition-all"
       onClick={() =>
-        navigate({ to: "/users/$userId", params: { userId: authorId } })
+        navigate({ to: "/users/$userId", params: { userId: profileTarget } })
       }
     >
       {avatarUrl && <AvatarImage src={avatarUrl} alt={profile?.name} />}
@@ -253,12 +254,13 @@ function PostAuthorAvatar({ authorId }: { authorId: string }) {
 function PostAuthorName({ authorId }: { authorId: string }) {
   const { data: profile } = useGetUserProfile(authorId);
   const navigate = useNavigate();
+  const profileTarget = profile?.username || authorId;
 
   return (
     <span
       className="font-semibold text-sm text-foreground cursor-pointer hover:text-primary transition-colors"
       onClick={() =>
-        navigate({ to: "/users/$userId", params: { userId: authorId } })
+        navigate({ to: "/users/$userId", params: { userId: profileTarget } })
       }
     >
       {profile?.username ?? profile?.name ?? "Unknown"}
@@ -273,12 +275,13 @@ function CommentAuthorAvatar({ userId }: { userId: string }) {
   const avatarUrl = profile?.profilePicture
     ? profile.profilePicture.getDirectURL()
     : null;
+  const profileTarget = profile?.username || userId;
 
   return (
     <Avatar
       className="w-7 h-7 cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all"
       onClick={() =>
-        navigate({ to: "/users/$userId", params: { userId: userId } })
+        navigate({ to: "/users/$userId", params: { userId: profileTarget } })
       }
     >
       {avatarUrl && <AvatarImage src={avatarUrl} />}
@@ -292,12 +295,13 @@ function CommentAuthorAvatar({ userId }: { userId: string }) {
 function CommentAuthorName({ userId }: { userId: string }) {
   const { data: profile } = useGetUserProfile(userId);
   const navigate = useNavigate();
+  const profileTarget = profile?.username || userId;
 
   return (
     <span
       className="font-semibold text-xs cursor-pointer hover:text-primary transition-colors"
       onClick={() =>
-        navigate({ to: "/users/$userId", params: { userId: userId } })
+        navigate({ to: "/users/$userId", params: { userId: profileTarget } })
       }
     >
       {profile?.username ?? profile?.name ?? "Unknown"}
@@ -319,7 +323,10 @@ function PostInteractionsBar({
   const likePost = useLikePost();
   const unlikePost = useUnlikePost();
   const giftRosesOnPost = useGiftRosesOnPost();
-  const { data: roseBalance = 0 } = useGetRoseBalance();
+  const { data: roseSummary } = useGetRoseSummary({
+    staleTime: 0,
+    refetchOnMount: true,
+  });
   const { identity } = useInternetIdentity();
   const { data: authorProfile } = useGetUserProfile(post.author.toString());
 
@@ -391,7 +398,7 @@ function PostInteractionsBar({
         onClose={() => setGiftOpen(false)}
         onGift={handleGift}
         recipientName={recipientName}
-        currentBalance={roseBalance}
+        currentBalance={roseSummary?.userBalance ?? 0}
       />
     </>
   );

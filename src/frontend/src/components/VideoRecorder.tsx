@@ -9,7 +9,6 @@ import {
 import { Pause, Play, Square, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useCamera } from "../camera/useCamera";
 import {
   selectVideoMimeType,
   shouldWarnWebMCompatibility,
@@ -30,39 +29,56 @@ export default function VideoRecorder({
   const [recordingTime, setRecordingTime] = useState(0);
   const [selectedMimeType, setSelectedMimeType] = useState<string>("");
   const [isSending, setIsSending] = useState(false);
+  const [isActive, setIsActive] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [cameraError, setCameraError] = useState<Error | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const videoChunksRef = useRef<Blob[]>([]);
   const playbackVideoRef = useRef<HTMLVideoElement | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  const {
-    isActive,
-    error,
-    isLoading,
-    startCamera,
-    stopCamera,
-    videoRef,
-    canvasRef,
-  } = useCamera({
-    facingMode: "user",
-    width: 1280,
-    height: 720,
-  });
+  const startCamera = async () => {
+    setIsLoading(true);
+    setCameraError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: 1280, height: 720 },
+        audio: true,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setIsActive(true);
+    } catch (err) {
+      setCameraError(
+        err instanceof Error ? err : new Error("Camera unavailable"),
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: startCamera/stopCamera are stable refs from useCamera
+  const stopCamera = () => {
+    if (streamRef.current) {
+      for (const track of streamRef.current.getTracks()) track.stop();
+      streamRef.current = null;
+    }
+    setIsActive(false);
+  };
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: startCamera/stopCamera are stable refs
   useEffect(() => {
-    // Select the best mimeType on mount
     const mimeType = selectVideoMimeType();
     setSelectedMimeType(mimeType);
 
-    // Warn if WebM on iOS
     if (shouldWarnWebMCompatibility(mimeType)) {
       toast.warning(
         "WebM recording may not play on all phones. MP4 is recommended for best compatibility.",
-        {
-          duration: 5000,
-        },
+        { duration: 5000 },
       );
     }
 
@@ -94,13 +110,10 @@ export default function VideoRecorder({
       videoChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          videoChunksRef.current.push(event.data);
-        }
+        if (event.data.size > 0) videoChunksRef.current.push(event.data);
       };
 
       mediaRecorder.onstop = () => {
-        // Use the selected mimeType for the blob
         const blob = new Blob(videoChunksRef.current, {
           type: selectedMimeType,
         });
@@ -196,9 +209,9 @@ export default function VideoRecorder({
         </DialogHeader>
 
         <div className="flex flex-col items-center gap-4 py-4">
-          {error && (
+          {cameraError && (
             <div className="text-destructive text-sm">
-              Error: {error.message}
+              Error: {cameraError.message}
             </div>
           )}
 
@@ -212,7 +225,6 @@ export default function VideoRecorder({
                   muted
                   className="w-full h-full object-cover"
                 />
-                <canvas ref={canvasRef} className="hidden" />
               </>
             ) : (
               <video

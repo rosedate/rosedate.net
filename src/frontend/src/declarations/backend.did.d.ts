@@ -170,6 +170,7 @@ export interface Post {
 export interface ProfileFilter {
   'country' : [] | [string],
   'minAge' : [] | [bigint],
+  'onlineOnly' : [] | [boolean],
   'gender' : [] | [string],
   'maxAge' : [] | [bigint],
   'minBalance' : [] | [number],
@@ -198,9 +199,11 @@ export interface RoseTransaction {
 }
 export type RoseTransactionType = { 'buy' : null } |
   { 'fee' : null } |
+  { 'charityClaim' : null } |
   { 'gift' : null } |
   { 'mint' : null } |
   { 'sell' : null } |
+  { 'charityDonate' : null } |
   { 'transfer' : null };
 export type SearchResult = {
     'postResult' : {
@@ -342,6 +345,11 @@ export interface _SERVICE {
   'blockUser' : ActorMethod<[Principal], undefined>,
   'buyRosesFromUser' : ActorMethod<[Principal, number], undefined>,
   'claimAllRoses' : ActorMethod<[], undefined>,
+  /**
+   * / Claim 0.01 Rose from the charity pool once every 24 hours.
+   * / The 5% fee is applied: caller receives 0.01 * 0.95 = 0.0095 Roses after fee.
+   */
+  'claimDailyCharity' : ActorMethod<[], string>,
   'cleanupExpiredStories' : ActorMethod<[], bigint>,
   'clearAllNotifications' : ActorMethod<[], undefined>,
   'commentOnPost' : ActorMethod<[string, string, [] | [bigint]], undefined>,
@@ -374,6 +382,12 @@ export interface _SERVICE {
   >,
   'deleteNotification' : ActorMethod<[bigint], undefined>,
   'deletePost' : ActorMethod<[string], undefined>,
+  /**
+   * / Donate `amount` Roses to the charity pool.
+   * / The standard 5% platform fee is applied: fee is distributed pro-rata to
+   * / all holders, and the net (amount * 0.95) goes into charityPool.
+   */
+  'donateToCharity' : ActorMethod<[number], string>,
   'editGroupMessage' : ActorMethod<
     [bigint, bigint, string],
     { 'ok' : GroupMessage } |
@@ -388,7 +402,10 @@ export interface _SERVICE {
     [string, string, [] | [ExternalBlob], [] | [string]],
     undefined
   >,
-  'filterProfiles' : ActorMethod<[ProfileFilter], Array<ProfileWithPrincipal>>,
+  'filterProfiles' : ActorMethod<
+    [ProfileFilter, bigint, bigint],
+    Array<ProfileWithPrincipal>
+  >,
   'followUser' : ActorMethod<[Principal], undefined>,
   'forwardGroupMessageToConversation' : ActorMethod<
     [bigint, bigint, bigint],
@@ -416,7 +433,7 @@ export interface _SERVICE {
     [],
     { 'email' : [] | [string], 'preferences' : [] | [EmailPreferences] }
   >,
-  'getCallerPosts' : ActorMethod<[], Array<Post>>,
+  'getCallerPosts' : ActorMethod<[bigint, bigint], Array<Post>>,
   'getCallerUserAnalytics' : ActorMethod<
     [],
     { 'ok' : UserAnalytics } |
@@ -424,6 +441,13 @@ export interface _SERVICE {
   >,
   'getCallerUserProfile' : ActorMethod<[], UserProfile>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
+  /**
+   * / Returns the current charity pool balance and the caller's last claim timestamp.
+   */
+  'getCharityInfo' : ActorMethod<
+    [],
+    { 'pool' : number, 'lastClaimTime' : [] | [bigint] }
+  >,
   'getConversations' : ActorMethod<[], Array<Conversation>>,
   'getFollowerCount' : ActorMethod<[Principal], bigint>,
   'getFollowingCount' : ActorMethod<[Principal], bigint>,
@@ -432,6 +456,7 @@ export interface _SERVICE {
   'getGroupMessages' : ActorMethod<[bigint], Array<GroupMessage>>,
   'getGroupTypingUsers' : ActorMethod<[bigint], Array<Principal>>,
   'getIcpUsdExchangeRate' : ActorMethod<[], number>,
+  'getLastSeen' : ActorMethod<[Principal], [] | [bigint]>,
   'getNotificationCountByType' : ActorMethod<[], NotificationCount>,
   'getNotifications' : ActorMethod<
     [bigint, bigint],
@@ -450,6 +475,7 @@ export interface _SERVICE {
   'getPinnedTrendingPost' : ActorMethod<[], [] | [Post]>,
   'getPlatformStats' : ActorMethod<[], PlatformStats>,
   'getPostComments' : ActorMethod<[string], Array<CommentInteraction>>,
+  'getPostCountByUser' : ActorMethod<[Principal], bigint>,
   'getPostInteractions' : ActorMethod<
     [string],
     {
@@ -462,7 +488,7 @@ export interface _SERVICE {
     }
   >,
   'getPostViewCount' : ActorMethod<[string], bigint>,
-  'getPosts' : ActorMethod<[], Array<Post>>,
+  'getPosts' : ActorMethod<[bigint, bigint], Array<Post>>,
   'getPostsFromFollowedUsers' : ActorMethod<[], Array<Post>>,
   'getRoseBalance' : ActorMethod<[], number>,
   'getRoseSummary' : ActorMethod<
@@ -474,7 +500,7 @@ export interface _SERVICE {
     }
   >,
   'getRoseTransactionHistory' : ActorMethod<[], Array<RoseTransaction>>,
-  'getSavedPosts' : ActorMethod<[], Array<Post>>,
+  'getSavedPosts' : ActorMethod<[bigint, bigint], Array<Post>>,
   'getStoryReactions' : ActorMethod<
     [bigint],
     Array<[string, Array<Principal>]>
@@ -484,7 +510,8 @@ export interface _SERVICE {
   'getTypingUsers' : ActorMethod<[bigint], Array<Principal>>,
   'getUnreadCounts' : ActorMethod<[], UnreadCounts>,
   'getUnreadNotificationCount' : ActorMethod<[], bigint>,
-  'getUserPosts' : ActorMethod<[Principal], Array<Post>>,
+  'getUserByUsername' : ActorMethod<[string], [] | [Principal]>,
+  'getUserPosts' : ActorMethod<[Principal, bigint, bigint], Array<Post>>,
   'getUserProfile' : ActorMethod<[{ 'profileId' : Principal }], UserProfile>,
   'getUserRoseBalance' : ActorMethod<[Principal], number>,
   'getUserStories' : ActorMethod<[Principal], Array<Story>>,

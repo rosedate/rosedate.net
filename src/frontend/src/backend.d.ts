@@ -294,6 +294,7 @@ export interface Message {
 export interface ProfileFilter {
     country?: string;
     minAge?: bigint;
+    onlineOnly?: boolean;
     gender?: string;
     maxAge?: bigint;
     minBalance?: number;
@@ -337,9 +338,11 @@ export enum NotificationType {
 export enum RoseTransactionType {
     buy = "buy",
     fee = "fee",
+    charityClaim = "charityClaim",
     gift = "gift",
     mint = "mint",
     sell = "sell",
+    charityDonate = "charityDonate",
     transfer = "transfer"
 }
 export enum UserRole {
@@ -353,6 +356,11 @@ export interface backendInterface {
     blockUser(userToBlock: Principal): Promise<void>;
     buyRosesFromUser(seller: Principal, amount: number): Promise<void>;
     claimAllRoses(): Promise<void>;
+    /**
+     * / Claim 0.01 Rose from the charity pool once every 24 hours.
+     * / The 5% fee is applied: caller receives 0.01 * 0.95 = 0.0095 Roses after fee.
+     */
+    claimDailyCharity(): Promise<string>;
     cleanupExpiredStories(): Promise<bigint>;
     clearAllNotifications(): Promise<void>;
     commentOnPost(postId: string, comment: string, parentCommentId: bigint | null): Promise<void>;
@@ -380,6 +388,12 @@ export interface backendInterface {
     }>;
     deleteNotification(notificationId: bigint): Promise<void>;
     deletePost(postId: string): Promise<void>;
+    /**
+     * / Donate `amount` Roses to the charity pool.
+     * / The standard 5% platform fee is applied: fee is distributed pro-rata to
+     * / all holders, and the net (amount * 0.95) goes into charityPool.
+     */
+    donateToCharity(amount: number): Promise<string>;
     editGroupMessage(groupId: bigint, messageId: bigint, newText: string): Promise<{
         __kind__: "ok";
         ok: GroupMessage;
@@ -395,7 +409,7 @@ export interface backendInterface {
         err: string;
     }>;
     editPost(postId: string, content: string, image: ExternalBlob | null, embed: string | null): Promise<void>;
-    filterProfiles(filter: ProfileFilter): Promise<Array<ProfileWithPrincipal>>;
+    filterProfiles(filter: ProfileFilter, limit: bigint, offset: bigint): Promise<Array<ProfileWithPrincipal>>;
     followUser(targetUser: Principal): Promise<void>;
     forwardGroupMessageToConversation(sourceGroupId: bigint, messageId: bigint, targetConversationId: bigint): Promise<{
         __kind__: "ok";
@@ -429,7 +443,7 @@ export interface backendInterface {
         email?: string;
         preferences?: EmailPreferences;
     }>;
-    getCallerPosts(): Promise<Array<Post>>;
+    getCallerPosts(limit: bigint, offset: bigint): Promise<Array<Post>>;
     getCallerUserAnalytics(): Promise<{
         __kind__: "ok";
         ok: UserAnalytics;
@@ -439,6 +453,13 @@ export interface backendInterface {
     }>;
     getCallerUserProfile(): Promise<UserProfile>;
     getCallerUserRole(): Promise<UserRole>;
+    /**
+     * / Returns the current charity pool balance and the caller's last claim timestamp.
+     */
+    getCharityInfo(): Promise<{
+        pool: number;
+        lastClaimTime?: bigint;
+    }>;
     getConversations(): Promise<Array<Conversation>>;
     getFollowerCount(targetUser: Principal): Promise<bigint>;
     getFollowingCount(targetUser: Principal): Promise<bigint>;
@@ -447,6 +468,7 @@ export interface backendInterface {
     getGroupMessages(groupId: bigint): Promise<Array<GroupMessage>>;
     getGroupTypingUsers(groupId: bigint): Promise<Array<Principal>>;
     getIcpUsdExchangeRate(): Promise<number>;
+    getLastSeen(userId: Principal): Promise<bigint | null>;
     getNotificationCountByType(): Promise<NotificationCount>;
     getNotifications(limit: bigint, offset: bigint): Promise<{
         total: bigint;
@@ -465,6 +487,7 @@ export interface backendInterface {
     getPinnedTrendingPost(): Promise<Post | null>;
     getPlatformStats(): Promise<PlatformStats>;
     getPostComments(postId: string): Promise<Array<CommentInteraction>>;
+    getPostCountByUser(userId: Principal): Promise<bigint>;
     getPostInteractions(postId: string): Promise<{
         totalRosesGifted: number;
         forwards: bigint;
@@ -474,7 +497,7 @@ export interface backendInterface {
         roseGifts: bigint;
     }>;
     getPostViewCount(postId: string): Promise<bigint>;
-    getPosts(): Promise<Array<Post>>;
+    getPosts(limit: bigint, offset: bigint): Promise<Array<Post>>;
     getPostsFromFollowedUsers(): Promise<Array<Post>>;
     getRoseBalance(): Promise<number>;
     getRoseSummary(): Promise<{
@@ -483,14 +506,15 @@ export interface backendInterface {
         userBalance: number;
     }>;
     getRoseTransactionHistory(): Promise<Array<RoseTransaction>>;
-    getSavedPosts(): Promise<Array<Post>>;
+    getSavedPosts(limit: bigint, offset: bigint): Promise<Array<Post>>;
     getStoryReactions(storyId: bigint): Promise<Array<[string, Array<Principal>]>>;
     getStripeSessionStatus(sessionId: string): Promise<StripeSessionStatus>;
     getTotalCirculatingRoses(): Promise<number>;
     getTypingUsers(conversationId: bigint): Promise<Array<Principal>>;
     getUnreadCounts(): Promise<UnreadCounts>;
     getUnreadNotificationCount(): Promise<bigint>;
-    getUserPosts(userId: Principal): Promise<Array<Post>>;
+    getUserByUsername(username: string): Promise<Principal | null>;
+    getUserPosts(userId: Principal, limit: bigint, offset: bigint): Promise<Array<Post>>;
     getUserProfile(arg0: {
         profileId: Principal;
     }): Promise<UserProfile>;

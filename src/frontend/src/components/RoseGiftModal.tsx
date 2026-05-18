@@ -10,7 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useGetIcpUsdExchangeRate } from "../hooks/useQueries";
+import {
+  useGetIcpUsdExchangeRate,
+  useGetRoseSummary,
+} from "../hooks/useQueries";
 
 type InputMode = "rose" | "usd";
 
@@ -34,6 +37,15 @@ export default function RoseGiftModal({
   const [isGifting, setIsGifting] = useState(false);
 
   const { data: exchangeRate = 8.0 } = useGetIcpUsdExchangeRate();
+  // Fetch the real balance from roseSummary as a fallback when the prop is 0
+  const { data: roseSummary } = useGetRoseSummary({
+    staleTime: 0,
+    refetchOnMount: true,
+  });
+  // userBalance from roseSummary is already a plain float — no division needed
+  const summaryBalance = roseSummary?.userBalance ?? 0;
+  // Prefer the summary balance over the prop — the prop can be stale/default 0.1
+  const effectiveBalance = summaryBalance > 0 ? summaryBalance : currentBalance;
 
   // Derived values
   const numAmount = Number.parseFloat(amount);
@@ -59,7 +71,7 @@ export default function RoseGiftModal({
       return;
     }
 
-    if (roseAmount > currentBalance) {
+    if (roseAmount > effectiveBalance) {
       toast.error("Insufficient balance");
       return;
     }
@@ -86,7 +98,7 @@ export default function RoseGiftModal({
     !amount ||
     !isValidNumber ||
     roseAmount < 0.01 ||
-    roseAmount > currentBalance;
+    roseAmount > effectiveBalance;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -176,7 +188,7 @@ export default function RoseGiftModal({
 
             {/* Balance & minimums */}
             <p className="text-xs text-muted-foreground">
-              Your balance: {currentBalance.toFixed(4)} Roses
+              Your balance: {effectiveBalance.toFixed(4)} Roses
             </p>
             <p className="text-xs text-muted-foreground">
               Minimum: 0.01 Rose • 5% platform fee applies

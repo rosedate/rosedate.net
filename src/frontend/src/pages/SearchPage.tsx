@@ -77,7 +77,9 @@ export default function SearchPage() {
                   key={principal.toString()}
                   className="cursor-pointer hover:shadow-lg transition-shadow"
                   onClick={() =>
-                    navigate({ to: `/users/${principal.toString()}` })
+                    navigate({
+                      to: `/users/${profile?.username || principal.toString()}`,
+                    })
                   }
                 >
                   <CardContent className="p-4">

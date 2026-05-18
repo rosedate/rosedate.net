@@ -226,6 +226,18 @@ actor {
     null;
   };
 
+  // Resolve any username to its Principal — used by the QR code scan flow.
+  // Returns null if no profile with that username exists.
+  public query func getUserByUsername(username : Text) : async ?Principal {
+    let lower = username.toLower();
+    for ((principal, profile) in userProfiles.entries()) {
+      if (profile.username.toLower() == lower) {
+        return ?principal;
+      };
+    };
+    null;
+  };
+
   public query ({ caller }) func getCallerUserProfile() : async UserProfile {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view profiles");
@@ -2720,7 +2732,7 @@ actor {
     };
   };
 
-  public query ({ caller }) func getSavedPosts() : async [Post] {
+  public query ({ caller }) func getSavedPosts(limit : Nat, offset : Nat) : async [Post] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view saved posts");
     };
@@ -2738,7 +2750,11 @@ actor {
         case null {};
       };
     };
-    Buffer.toArray(buffer);
+    let all = Buffer.toArray(buffer);
+    let total = all.size();
+    if (offset >= total) { return [] };
+    let end = if (offset + limit > total) { total } else { offset + limit };
+    all.sliceToArray(offset.toInt(), end.toInt());
   };
 
   public shared ({ caller }) func forwardPostToConversation(postId : Text, conversationId : Nat) : async () {
@@ -2894,7 +2910,7 @@ actor {
     };
   };
 
-  public query ({ caller }) func getPosts() : async [Post] {
+  public query ({ caller }) func getPosts(limit : Nat, offset : Nat) : async [Post] {
     // Require authentication to view posts
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only authenticated users can view posts");
@@ -2906,10 +2922,17 @@ actor {
         buffer.add(post);
       };
     };
-    Buffer.toArray(buffer);
+    // Sort by timestamp descending so newest posts appear first on page 1
+    let sorted = Buffer.toArray(buffer).sort(func(a : Post, b : Post) : { #less; #equal; #greater } {
+      Int.compare(b.timestamp, a.timestamp)
+    });
+    let total = sorted.size();
+    if (offset >= total) { return [] };
+    let end = if (offset + limit > total) { total } else { offset + limit };
+    sorted.sliceToArray(offset.toInt(), end.toInt());
   };
 
-  public query ({ caller }) func getCallerPosts() : async [Post] {
+  public query ({ caller }) func getCallerPosts(limit : Nat, offset : Nat) : async [Post] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view their own posts");
     };
@@ -2920,10 +2943,17 @@ actor {
         buffer.add(post);
       };
     };
-    Buffer.toArray(buffer);
+    // Sort by timestamp descending so newest posts appear first
+    let sorted = Buffer.toArray(buffer).sort(func(a : Post, b : Post) : { #less; #equal; #greater } {
+      Int.compare(b.timestamp, a.timestamp)
+    });
+    let total = sorted.size();
+    if (offset >= total) { return [] };
+    let end = if (offset + limit > total) { total } else { offset + limit };
+    sorted.sliceToArray(offset.toInt(), end.toInt());
   };
 
-  public query ({ caller }) func getUserPosts(userId : Principal) : async [Post] {
+  public query ({ caller }) func getUserPosts(userId : Principal, limit : Nat, offset : Nat) : async [Post] {
     // Require authentication to view user posts
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only authenticated users can view user posts");
@@ -2940,10 +2970,40 @@ actor {
         buffer.add(post);
       };
     };
-    Buffer.toArray(buffer);
+    // Sort by timestamp descending so newest posts appear first
+    let sorted = Buffer.toArray(buffer).sort(func(a : Post, b : Post) : { #less; #equal; #greater } {
+      Int.compare(b.timestamp, a.timestamp)
+    });
+    let total = sorted.size();
+    if (offset >= total) { return [] };
+    let end = if (offset + limit > total) { total } else { offset + limit };
+    sorted.sliceToArray(offset.toInt(), end.toInt());
   };
 
   // Rose Currency System
+  // Returns the total number of posts authored by a user.
+  // Used by the frontend to determine whether to show the "View More" button
+  // on profile pages without over-fetching full post objects.
+  public query ({ caller }) func getPostCountByUser(userId : Principal) : async Nat {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only authenticated users can view post counts");
+    };
+
+    // Check blocking relationship
+    if (hasBlockingRelationship(caller, userId)) {
+      Runtime.trap("Cannot view post count: blocking relationship exists");
+    };
+
+    var count = 0;
+    for ((__id, post) in posts.entries()) {
+      if (post.author == userId) {
+        count += 1;
+      };
+    };
+    count;
+  };
+
+
   public type RoseTransactionType = {
     #gift;
     #buy;
@@ -2951,6 +3011,8 @@ actor {
     #transfer;
     #fee;
     #mint;
+    #charityDonate;
+    #charityClaim;
   };
 
   public type RoseTransaction = {
@@ -2967,6 +3029,10 @@ actor {
   var roseTransactions : [RoseTransaction] = [];
   var roseBalances = Map.empty<Principal, Float>();
   var totalCirculatingRoses : Float = 0.0;
+  // Charity Pool
+  var charityPool : Float = 0.0;
+  var charityLastClaimMap = Map.empty<Principal, Int>();
+
   let totalRoseSupply : Float = 9_999_999.0;
   let adminUsername : Text = "rosalia";
 
@@ -3347,6 +3413,158 @@ actor {
     };
   };
 
+  // ── Charity Pool ──────────────────────────────────────────────────────────
+
+  /// Donate `amount` Roses to the charity pool.
+  /// The standard 5% platform fee is applied: fee is distributed pro-rata to
+  /// all holders, and the net (amount * 0.95) goes into charityPool.
+  public shared ({ caller }) func donateToCharity(amount : Float) : async Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can donate to charity");
+    };
+
+    if (amount < 0.01) {
+      Runtime.trap("Minimum donation is 0.01 Rose");
+    };
+
+    let senderBalance = switch (roseBalances.get(caller)) {
+      case null { 0.0 };
+      case (?b) { b };
+    };
+
+    if (senderBalance < amount) {
+      Runtime.trap("Insufficient balance to donate " # Float.toText(amount) # " Roses");
+    };
+
+    let fee = amount * 0.05;
+    let netAmount = amount - fee;
+
+    // Deduct full amount from donor
+    roseBalances.add(caller, senderBalance - amount);
+
+    // Add net amount to charity pool
+    charityPool += netAmount;
+
+    // Distribute fee pro-rata to all holders
+    if (totalCirculatingRoses > 0.0) {
+      let buffer = Buffer.Buffer<(Principal, Float)>(0);
+      for ((p, bal) in roseBalances.entries()) {
+        buffer.add((p, bal));
+      };
+      for ((p, bal) in buffer.vals()) {
+        if (bal > 0.0) {
+          let share = (bal / totalCirculatingRoses) * fee;
+          let current = switch (roseBalances.get(p)) {
+            case null { 0.0 };
+            case (?b) { b };
+          };
+          roseBalances.add(p, current + share);
+        };
+      };
+    };
+
+    let tx : RoseTransaction = {
+      id = nextRoseTransactionId;
+      sender = ?caller;
+      receiver = null;
+      amount = netAmount;
+      transactionType = #charityDonate;
+      timestamp = Time.now();
+      feeDistributed = fee;
+    };
+    roseTransactions := roseTransactions.concat([tx]);
+    nextRoseTransactionId += 1;
+
+    "Donated " # Float.toText(netAmount) # " Roses to the charity pool (" # Float.toText(fee) # " Rose fee applied)";
+  };
+
+  /// Claim 0.01 Rose from the charity pool once every 24 hours.
+  /// The 5% fee is applied: caller receives 0.01 * 0.95 = 0.0095 Roses after fee.
+  public shared ({ caller }) func claimDailyCharity() : async Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can claim from charity");
+    };
+
+    let claimAmount : Float = 0.01;
+    let fee = claimAmount * 0.05;
+    let netClaim = claimAmount - fee;
+
+    if (charityPool < claimAmount) {
+      Runtime.trap("Charity pool is empty or has insufficient funds");
+    };
+
+    let now = Time.now();
+    let oneDayNs : Int = 24 * 60 * 60 * 1_000_000_000;
+
+    switch (charityLastClaimMap.get(caller)) {
+      case (?lastClaim) {
+        let elapsed = now - lastClaim;
+        if (elapsed < oneDayNs) {
+          let remainingSec = (oneDayNs - elapsed) / 1_000_000_000;
+          Runtime.trap("Claim again in " # (remainingSec / 3600).toText() # "h " # ((remainingSec % 3600) / 60).toText() # "m");
+        };
+      };
+      case null {};
+    };
+
+    // Deduct from charity pool
+    charityPool -= claimAmount;
+
+    // Credit net amount to caller
+    let currentBalance = switch (roseBalances.get(caller)) {
+      case null { 0.0 };
+      case (?b) { b };
+    };
+    roseBalances.add(caller, currentBalance + netClaim);
+
+    // Distribute fee pro-rata to all holders
+    if (totalCirculatingRoses > 0.0) {
+      let buffer = Buffer.Buffer<(Principal, Float)>(0);
+      for ((p, bal) in roseBalances.entries()) {
+        buffer.add((p, bal));
+      };
+      for ((p, bal) in buffer.vals()) {
+        if (bal > 0.0) {
+          let share = (bal / totalCirculatingRoses) * fee;
+          let current = switch (roseBalances.get(p)) {
+            case null { 0.0 };
+            case (?b) { b };
+          };
+          roseBalances.add(p, current + share);
+        };
+      };
+    };
+
+    // Record last claim time
+    charityLastClaimMap.add(caller, now);
+
+    let tx : RoseTransaction = {
+      id = nextRoseTransactionId;
+      sender = null;
+      receiver = ?caller;
+      amount = netClaim;
+      transactionType = #charityClaim;
+      timestamp = now;
+      feeDistributed = fee;
+    };
+    roseTransactions := roseTransactions.concat([tx]);
+    nextRoseTransactionId += 1;
+
+    "Claimed " # Float.toText(netClaim) # " Roses from the charity pool";
+  };
+
+  /// Returns the current charity pool balance and the caller's last claim timestamp.
+  public query ({ caller }) func getCharityInfo() : async { pool : Float; lastClaimTime : ?Int } {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view charity info");
+    };
+
+    {
+      pool = charityPool;
+      lastClaimTime = charityLastClaimMap.get(caller);
+    };
+  };
+
   // Admin Analytics Dashboard Functions
   public type AnalyticsSummary = {
     totalUsers : Nat;
@@ -3691,6 +3909,7 @@ actor {
     maxAge : ?Nat;
     gender : ?Text;
     minBalance : ?Float;
+    onlineOnly : ?Bool;
   };
 
   public type ProfileWithPrincipal = {
@@ -3699,7 +3918,7 @@ actor {
     balance : Float;
   };
 
-  public query ({ caller }) func filterProfiles(filter : ProfileFilter) : async [ProfileWithPrincipal] {
+  public query ({ caller }) func filterProfiles(filter : ProfileFilter, limit : Nat, offset : Nat) : async [ProfileWithPrincipal] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can filter profiles");
     };
@@ -3756,7 +3975,17 @@ actor {
             case (?minBalance) { profileBalance >= minBalance };
           };
 
-          if (countryMatch and ageMatch and genderMatch and balanceMatch) {
+          let onlineMatch = switch (filter.onlineOnly) {
+            case (?true) {
+              switch (lastActiveMap.get(principal)) {
+                case null { false };
+                case (?lastActive) { Time.now() - lastActive <= onlineThreshold };
+              };
+            };
+            case _ { true };
+          };
+
+          if (countryMatch and ageMatch and genderMatch and balanceMatch and onlineMatch) {
             buffer.add({
               principal;
               profile;
@@ -3767,7 +3996,11 @@ actor {
       };
     };
 
-    Buffer.toArray(buffer);
+    let all = Buffer.toArray(buffer);
+    let total = all.size();
+    if (offset >= total) { return [] };
+    let end = if (offset + limit > total) { total } else { offset + limit };
+    all.sliceToArray(offset.toInt(), end.toInt());
   };
 
   public shared ({ caller }) func convertBalanceToUsd(amount : Float) : async Float {
@@ -4778,6 +5011,15 @@ actor {
       };
     };
     Buffer.toArray(buffer);
+  };
+
+  // Returns the raw lastActive nanosecond timestamp for a given user, or null
+  // if the user has never called updateLastActive.
+  public query ({ caller }) func getLastSeen(userId : Principal) : async ?Int {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can check last seen");
+    };
+    lastActiveMap.get(userId);
   };
 
   // ── Bulk Read Receipts ────────────────────────────────────────────────────

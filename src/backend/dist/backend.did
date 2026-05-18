@@ -142,6 +142,8 @@ type SearchResult =
 type RoseTransactionType = 
  variant {
    buy;
+   charityClaim;
+   charityDonate;
    fee;
    gift;
    mint;
@@ -180,6 +182,7 @@ type ProfileFilter =
    maxAge: opt nat;
    minAge: opt nat;
    minBalance: opt float64;
+   onlineOnly: opt bool;
  };
 type Post = 
  record {
@@ -382,6 +385,9 @@ service : {
   blockUser: (userToBlock: principal) -> ();
   buyRosesFromUser: (seller: principal, amount: float64) -> ();
   claimAllRoses: () -> ();
+  /// Claim 0.01 Rose from the charity pool once every 24 hours.
+  /// The 5% fee is applied: caller receives 0.01 * 0.95 = 0.0095 Roses after fee.
+  claimDailyCharity: () -> (text);
   cleanupExpiredStories: () -> (nat);
   clearAllNotifications: () -> ();
   commentOnPost: (postId: text, comment: text, parentCommentId: opt nat) ->
@@ -408,6 +414,10 @@ service : {
     });
   deleteNotification: (notificationId: nat) -> ();
   deletePost: (postId: text) -> ();
+  /// Donate `amount` Roses to the charity pool.
+  /// The standard 5% platform fee is applied: fee is distributed pro-rata to
+  /// all holders, and the net (amount * 0.95) goes into charityPool.
+  donateToCharity: (amount: float64) -> (text);
   editGroupMessage: (groupId: nat, messageId: nat, newText: text) ->
    (variant {
       err: text;
@@ -420,7 +430,8 @@ service : {
     });
   editPost: (postId: text, content: text, image: opt ExternalBlob, embed:
    opt text) -> ();
-  filterProfiles: (filter: ProfileFilter) -> (vec ProfileWithPrincipal) query;
+  filterProfiles: (filter: ProfileFilter, limit: nat, offset: nat) ->
+   (vec ProfileWithPrincipal) query;
   followUser: (targetUser: principal) -> ();
   forwardGroupMessageToConversation: (sourceGroupId: nat, messageId: 
    nat, targetConversationId: nat) -> (variant {
@@ -452,7 +463,7 @@ service : {
       email: opt text;
       preferences: opt EmailPreferences;
     }) query;
-  getCallerPosts: () -> (vec Post) query;
+  getCallerPosts: (limit: nat, offset: nat) -> (vec Post) query;
   getCallerUserAnalytics: () ->
    (variant {
       err: text;
@@ -460,6 +471,12 @@ service : {
     }) query;
   getCallerUserProfile: () -> (UserProfile) query;
   getCallerUserRole: () -> (UserRole) query;
+  /// Returns the current charity pool balance and the caller's last claim timestamp.
+  getCharityInfo: () ->
+   (record {
+      lastClaimTime: opt int;
+      pool: float64;
+    }) query;
   getConversations: () -> (vec Conversation) query;
   getFollowerCount: (targetUser: principal) -> (nat) query;
   getFollowingCount: (targetUser: principal) -> (nat) query;
@@ -468,6 +485,7 @@ service : {
   getGroupMessages: (groupId: nat) -> (vec GroupMessage) query;
   getGroupTypingUsers: (groupId: nat) -> (vec principal) query;
   getIcpUsdExchangeRate: () -> (float64);
+  getLastSeen: (userId: principal) -> (opt int) query;
   getNotificationCountByType: () -> (NotificationCount) query;
   getNotifications: (limit: nat, offset: nat) ->
    (record {
@@ -483,6 +501,7 @@ service : {
   getPinnedTrendingPost: () -> (opt Post) query;
   getPlatformStats: () -> (PlatformStats) query;
   getPostComments: (postId: text) -> (vec CommentInteraction) query;
+  getPostCountByUser: (userId: principal) -> (nat) query;
   getPostInteractions: (postId: text) ->
    (record {
       comments: nat;
@@ -493,7 +512,7 @@ service : {
       totalRosesGifted: float64;
     }) query;
   getPostViewCount: (postId: text) -> (nat) query;
-  getPosts: () -> (vec Post) query;
+  getPosts: (limit: nat, offset: nat) -> (vec Post) query;
   getPostsFromFollowedUsers: () -> (vec Post) query;
   getRoseBalance: () -> (float64) query;
   getRoseSummary: () ->
@@ -503,7 +522,7 @@ service : {
       userBalance: float64;
     }) query;
   getRoseTransactionHistory: () -> (vec RoseTransaction) query;
-  getSavedPosts: () -> (vec Post) query;
+  getSavedPosts: (limit: nat, offset: nat) -> (vec Post) query;
   getStoryReactions: (storyId: nat) ->
    (vec record {
           text;
@@ -514,7 +533,9 @@ service : {
   getTypingUsers: (conversationId: nat) -> (vec principal) query;
   getUnreadCounts: () -> (UnreadCounts) query;
   getUnreadNotificationCount: () -> (nat) query;
-  getUserPosts: (userId: principal) -> (vec Post) query;
+  getUserByUsername: (username: text) -> (opt principal) query;
+  getUserPosts: (userId: principal, limit: nat, offset: nat) ->
+   (vec Post) query;
   getUserProfile: (record {profileId: principal;}) -> (UserProfile) query;
   getUserRoseBalance: (user: principal) -> (float64) query;
   getUserStories: (userId: principal) -> (vec Story) query;

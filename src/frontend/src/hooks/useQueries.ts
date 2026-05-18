@@ -1,5 +1,6 @@
 import { Principal } from "@icp-sdk/core/principal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import type {
   CommentInteraction,
   Conversation,
@@ -20,6 +21,20 @@ import type {
 } from "../backend";
 import { useActor } from "./useActor";
 
+// Page Visibility — returns true when the tab is visible, false when hidden/backgrounded
+function usePageVisibility(): boolean {
+  const [isVisible, setIsVisible] = useState(
+    () =>
+      typeof document === "undefined" || document.visibilityState === "visible",
+  );
+  useEffect(() => {
+    const handler = () => setIsVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, []);
+  return isVisible;
+}
+
 // Helper to convert Principal | string to Principal
 function toPrincipal(p: Principal | string): Principal {
   if (typeof p === "string") return Principal.fromText(p);
@@ -34,6 +49,7 @@ function serializableFilter(filter: ProfileFilter): Record<string, unknown> {
     maxAge: filter.maxAge !== undefined ? filter.maxAge.toString() : undefined,
     gender: filter.gender,
     minBalance: filter.minBalance,
+    onlineOnly: filter.onlineOnly,
   };
 }
 
@@ -81,6 +97,22 @@ export function useGetUserProfile(profileId: Principal | string | null) {
     enabled: !!actor && !!profileId,
   });
 }
+export function useGetUserByUsername(username: string | null) {
+  const { actor } = useActor();
+
+  return useQuery<Principal | null>({
+    queryKey: ["userByUsername", username],
+    queryFn: async () => {
+      if (!actor || !username) return null;
+      try {
+        return await actor.getUserByUsername(username);
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!actor && !!username,
+  });
+}
 
 export function useSaveCallerUserProfile() {
   const { actor } = useActor();
@@ -120,7 +152,10 @@ export function useFilterProfiles(filter: ProfileFilter) {
     queryKey: ["profiles", serializableFilter(filter)],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.filterProfiles(filter);
+      // Fetch all matching profiles at once (like getPosts) so the frontend
+      // can do local pagination. The hasMore check (visibleCount < profiles.length)
+      // only works correctly when the full result set is in memory.
+      return actor.filterProfiles(filter, BigInt(1000), BigInt(0));
     },
     enabled: !!actor,
   });
@@ -134,7 +169,11 @@ export function useGetDealers() {
     queryKey: ["dealers"],
     queryFn: async () => {
       if (!actor) return [];
-      const results = await actor.filterProfiles({ minBalance: 50 });
+      const results = await actor.filterProfiles(
+        { minBalance: 50 },
+        BigInt(49),
+        BigInt(0),
+      );
       return results;
     },
     enabled: !!actor,
@@ -285,7 +324,7 @@ export function useGetPosts() {
     queryKey: ["posts"],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getPosts();
+      return actor.getPosts(BigInt(1000), BigInt(0));
     },
     enabled: !!actor,
   });
@@ -298,7 +337,7 @@ export function useGetCallerPosts() {
     queryKey: ["callerPosts"],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getCallerPosts();
+      return actor.getCallerPosts(BigInt(9), BigInt(0));
     },
     enabled: !!actor,
   });
@@ -312,7 +351,10 @@ export function useGetUserPosts(userId: Principal | string | null) {
     queryKey: ["userPosts", userIdStr],
     queryFn: async () => {
       if (!actor || !userId) return [];
-      return actor.getUserPosts(toPrincipal(userId));
+      // Fetch all posts for this user so client-side pagination in
+      // UserProfilePage.tsx can reliably show 9 at a time with a View More
+      // button. Using a large limit ensures sortedPosts.length is authoritative.
+      return actor.getUserPosts(toPrincipal(userId), BigInt(1000), BigInt(0));
     },
     enabled: !!actor && !!userId,
   });
@@ -338,7 +380,7 @@ export function useGetSavedPosts() {
     queryKey: ["savedPosts"],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getSavedPosts();
+      return actor.getSavedPosts(BigInt(9), BigInt(0));
     },
     enabled: !!actor,
   });
@@ -571,6 +613,7 @@ export function useGiftRosesOnPost() {
     onSuccess: (_, { postId }) => {
       queryClient.invalidateQueries({ queryKey: ["postInteractions", postId] });
       queryClient.invalidateQueries({ queryKey: ["roseBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["roseSummary"] });
     },
   });
 }
@@ -624,6 +667,7 @@ export function useUnpinTrendingPost() {
 // Conversation Hooks
 export function useGetConversations() {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<Conversation[]>({
     queryKey: ["conversations"],
@@ -632,7 +676,7 @@ export function useGetConversations() {
       return actor.getConversations();
     },
     enabled: !!actor,
-    refetchInterval: 10000,
+    refetchInterval: () => (isVisible ? 10000 : false),
     refetchOnWindowFocus: true,
   });
 }
@@ -848,6 +892,7 @@ export function useMarkGroupChatRead() {
 // New: get unread counts for all conversations and groups (polls every 10s)
 export function useGetUnreadCounts() {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<UnreadCounts>({
     queryKey: ["unreadCounts"],
@@ -860,7 +905,7 @@ export function useGetUnreadCounts() {
       }
     },
     enabled: !!actor,
-    refetchInterval: 10000,
+    refetchInterval: () => (isVisible ? 10000 : false),
     refetchOnWindowFocus: true,
   });
 }
@@ -886,6 +931,7 @@ export function useSetTyping() {
 
 export function useGetTypingUsers(conversationId: bigint | null) {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<string[]>({
     queryKey: ["typingUsers", conversationId?.toString()],
@@ -899,7 +945,7 @@ export function useGetTypingUsers(conversationId: bigint | null) {
       }
     },
     enabled: !!actor && conversationId !== null,
-    refetchInterval: 3000,
+    refetchInterval: () => (isVisible ? 3000 : false),
   });
 }
 
@@ -924,6 +970,7 @@ export function useSetGroupTyping() {
 
 export function useGetGroupTypingUsers(groupId: bigint | null) {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<string[]>({
     queryKey: ["groupTypingUsers", groupId?.toString()],
@@ -937,7 +984,7 @@ export function useGetGroupTypingUsers(groupId: bigint | null) {
       }
     },
     enabled: !!actor && groupId !== null,
-    refetchInterval: 3000,
+    refetchInterval: () => (isVisible ? 3000 : false),
   });
 }
 
@@ -1072,6 +1119,7 @@ export function useGetGroupChats() {
 
 export function useGetGroupMessages(groupId: bigint | null) {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<GroupMessage[]>({
     queryKey: ["groupMessages", groupId?.toString()],
@@ -1080,7 +1128,7 @@ export function useGetGroupMessages(groupId: bigint | null) {
       return actor.getGroupMessages(groupId);
     },
     enabled: !!actor && groupId !== null,
-    refetchInterval: 10000,
+    refetchInterval: () => (isVisible ? 10000 : false),
     refetchOnWindowFocus: true,
   });
 }
@@ -1395,6 +1443,7 @@ export function useUnreactToStory() {
 
 export function useGetStoryReactions(storyId: bigint | null) {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<Array<[string, Array<Principal>]>>({
     queryKey: ["storyReactions", storyId?.toString()],
@@ -1403,7 +1452,7 @@ export function useGetStoryReactions(storyId: bigint | null) {
       return actor.getStoryReactions(storyId);
     },
     enabled: !!actor && storyId !== null,
-    refetchInterval: 10000,
+    refetchInterval: () => (isVisible ? 10000 : false),
   });
 }
 
@@ -1422,26 +1471,39 @@ export function useGiftRosesOnStory() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roseBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["roseSummary"] });
       queryClient.invalidateQueries({ queryKey: ["roseTransactions"] });
     },
   });
 }
 
 // Rose Currency Hooks
-export function useGetRoseBalance() {
+export function useGetRoseBalance(options?: {
+  staleTime?: number;
+  refetchOnMount?: boolean;
+}) {
   const { actor } = useActor();
 
-  return useQuery<number>({
+  return useQuery<bigint>({
     queryKey: ["roseBalance"],
     queryFn: async () => {
-      if (!actor) return 0;
-      return actor.getRoseBalance();
+      if (!actor) return BigInt(0);
+      const result = await actor.getRoseBalance();
+      // Handle both bigint and number returns
+      return typeof result === "bigint"
+        ? result
+        : BigInt(Math.round(Number(result)));
     },
     enabled: !!actor,
+    staleTime: options?.staleTime,
+    refetchOnMount: options?.refetchOnMount,
   });
 }
 
-export function useGetRoseSummary() {
+export function useGetRoseSummary(options?: {
+  staleTime?: number;
+  refetchOnMount?: boolean;
+}) {
   const { actor } = useActor();
 
   return useQuery({
@@ -1451,6 +1513,8 @@ export function useGetRoseSummary() {
       return actor.getRoseSummary();
     },
     enabled: !!actor,
+    staleTime: options?.staleTime,
+    refetchOnMount: options?.refetchOnMount,
   });
 }
 
@@ -1495,6 +1559,7 @@ export function useGiftRoses() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roseBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["roseSummary"] });
       queryClient.invalidateQueries({ queryKey: ["roseTransactions"] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     },
@@ -1512,6 +1577,7 @@ export function useRequestBuyRoses() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roseBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["roseSummary"] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     },
   });
@@ -1528,6 +1594,7 @@ export function useRequestSellRoses() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roseBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["roseSummary"] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     },
   });
@@ -1547,6 +1614,7 @@ export function useSellRosesToUser() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roseBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["roseSummary"] });
       queryClient.invalidateQueries({ queryKey: ["roseTransactions"] });
     },
   });
@@ -1566,6 +1634,7 @@ export function useBuyRosesFromUser() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roseBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["roseSummary"] });
       queryClient.invalidateQueries({ queryKey: ["roseTransactions"] });
     },
   });
@@ -1610,6 +1679,7 @@ export function useGetIcpUsdExchangeRate() {
 // Analytics Hooks
 export function useGetAnalyticsSummary() {
   const { actor, isFetching: actorFetching } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery({
     queryKey: ["analyticsSummary"],
@@ -1618,7 +1688,7 @@ export function useGetAnalyticsSummary() {
       return actor.getAnalyticsSummary();
     },
     enabled: !!actor && !actorFetching,
-    refetchInterval: 60000,
+    refetchInterval: () => (isVisible ? 60000 : false),
     refetchOnWindowFocus: true,
     retry: 2,
   });
@@ -1626,6 +1696,7 @@ export function useGetAnalyticsSummary() {
 
 export function useGetCallerUserAnalytics() {
   const { actor, isFetching: actorFetching } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<UserAnalytics | null>({
     queryKey: ["callerUserAnalytics"],
@@ -1636,7 +1707,7 @@ export function useGetCallerUserAnalytics() {
       return null;
     },
     enabled: !!actor && !actorFetching,
-    refetchInterval: 60000,
+    refetchInterval: () => (isVisible ? 60000 : false),
     refetchOnWindowFocus: true,
     retry: 2,
   });
@@ -1671,6 +1742,7 @@ export function useGetAllUserProfiles() {
 // Online Status Hooks
 export function useGetOnlineUsers() {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<string[]>({
     queryKey: ["onlineUsers"],
@@ -1684,7 +1756,7 @@ export function useGetOnlineUsers() {
       }
     },
     enabled: !!actor,
-    refetchInterval: 30000,
+    refetchInterval: () => (isVisible ? 30000 : false),
   });
 }
 
@@ -1703,16 +1775,75 @@ export function useUpdateLastActive() {
   });
 }
 
-export function useIsOnline(userId: Principal | string | null) {
+// Auto-heartbeat: calls updateLastActive on mount and every 60s while tab is visible
+export function useAutoUpdateLastActive() {
+  const { actor } = useActor();
+  const isVisible = usePageVisibility();
+
+  useEffect(() => {
+    if (!actor || !isVisible) return;
+    // Fire immediately on mount / tab focus
+    actor.updateLastActive().catch(() => {});
+    const interval = setInterval(() => {
+      actor.updateLastActive().catch(() => {});
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [actor, isVisible]);
+}
+
+export function useIsOnline(userId: Principal | string | null): boolean {
   const { data: onlineUsers = [] } = useGetOnlineUsers();
   if (!userId) return false;
   const str = typeof userId === "string" ? userId : userId.toText();
   return onlineUsers.includes(str);
 }
 
+// useGetLastSeen: fetches the last-seen timestamp for a user.
+// Returns null if the backend does not expose this method.
+export function useGetLastSeen(userId: Principal | string | null) {
+  const { actor } = useActor();
+  const userIdStr = userId ? toPrincipal(userId).toText() : null;
+
+  return useQuery<bigint | null>({
+    queryKey: ["lastSeen", userIdStr],
+    queryFn: async () => {
+      if (!actor || !userId) return null;
+      try {
+        return await actor.getLastSeen(toPrincipal(userId));
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!actor && !!userId,
+    staleTime: 30000,
+  });
+}
+
+// Convert a nanosecond timestamp (bigint) to a human-readable "X ago" string
+export function formatLastSeen(
+  nanoTs: bigint | null | undefined,
+): string | null {
+  if (!nanoTs) return null;
+  const ms = Number(nanoTs) / 1_000_000;
+  const diffMs = Date.now() - ms;
+  if (diffMs < 0) return null;
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return "Active just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `Active ${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `Active ${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 30) return `Active ${diffDay}d ago`;
+  const diffWk = Math.floor(diffDay / 7);
+  if (diffWk < 4) return `Active ${diffWk}w ago`;
+  return null;
+}
+
 // Notification Hooks
 export function useGetNotifications() {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<Notification[]>({
     queryKey: ["notifications"],
@@ -1723,12 +1854,13 @@ export function useGetNotifications() {
       return result.notifications;
     },
     enabled: !!actor,
-    refetchInterval: 30000,
+    refetchInterval: () => (isVisible ? 30000 : false),
   });
 }
 
 export function useGetNotificationsPaginated(offset: number, limit = 6) {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<{ notifications: Notification[]; total: bigint }>({
     queryKey: ["notificationsPaginated", offset, limit],
@@ -1737,12 +1869,13 @@ export function useGetNotificationsPaginated(offset: number, limit = 6) {
       return actor.getNotifications(BigInt(limit), BigInt(offset));
     },
     enabled: !!actor,
-    refetchInterval: 30000,
+    refetchInterval: () => (isVisible ? 30000 : false),
   });
 }
 
 export function useGetUnreadNotificationCount() {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<bigint>({
     queryKey: ["unreadNotificationCount"],
@@ -1751,7 +1884,7 @@ export function useGetUnreadNotificationCount() {
       return actor.getUnreadNotificationCount();
     },
     enabled: !!actor,
-    refetchInterval: 15000,
+    refetchInterval: () => (isVisible ? 15000 : false),
   });
 }
 
@@ -1893,6 +2026,7 @@ export function useGetPinnedConversationMessage(
   otherPrincipal: Principal | string | null,
 ) {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
   const otherStr = otherPrincipal ? toPrincipal(otherPrincipal).toText() : null;
 
   return useQuery({
@@ -1902,7 +2036,7 @@ export function useGetPinnedConversationMessage(
       return actor.getPinnedConversationMessage(toPrincipal(otherPrincipal));
     },
     enabled: !!actor && !!otherPrincipal,
-    refetchInterval: 15000,
+    refetchInterval: () => (isVisible ? 15000 : false),
   });
 }
 
@@ -1951,6 +2085,7 @@ export function useUnpinConversationMessage() {
 // ── Pinned Group Message Hooks ────────────────────────────────────────────────
 export function useGetPinnedGroupMessage(groupId: bigint | null) {
   const { actor } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery({
     queryKey: ["pinnedGroupMessage", groupId?.toString()],
@@ -1959,7 +2094,7 @@ export function useGetPinnedGroupMessage(groupId: bigint | null) {
       return actor.getPinnedGroupMessage(groupId);
     },
     enabled: !!actor && groupId !== null,
-    refetchInterval: 15000,
+    refetchInterval: () => (isVisible ? 15000 : false),
   });
 }
 
@@ -2005,6 +2140,7 @@ export function useUnpinGroupMessage() {
 // Email Preferences Hooks
 export function useGetCallerEmailPreferences() {
   const { actor, isFetching: actorFetching } = useActor();
+  const isVisible = usePageVisibility();
 
   return useQuery<{ email?: string; preferences?: EmailPreferences }>({
     queryKey: ["callerEmailPreferences"],
@@ -2013,7 +2149,7 @@ export function useGetCallerEmailPreferences() {
       return actor.getCallerEmailPreferences();
     },
     enabled: !!actor && !actorFetching,
-    refetchInterval: 30000,
+    refetchInterval: () => (isVisible ? 30000 : false),
     staleTime: 1000 * 60 * 5,
     retry: false,
   });
@@ -2037,5 +2173,65 @@ export function useSaveCallerEmailPreferences() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["callerEmailPreferences"] });
     },
+  });
+}
+// ── Charity Hooks ─────────────────────────────────────────────────────────────
+export function useGetCharityInfo() {
+  const { actor, isFetching: actorFetching } = useActor();
+  const isVisible = usePageVisibility();
+
+  return useQuery<{ pool: number; lastClaimTime?: bigint }>({
+    queryKey: ["charityInfo"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.getCharityInfo();
+    },
+    enabled: !!actor && !actorFetching,
+    refetchInterval: () => (isVisible ? 30000 : false),
+  });
+}
+
+export function useDonateToCharity() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (amount: number) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.donateToCharity(amount);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["charityInfo"] });
+      queryClient.invalidateQueries({ queryKey: ["roseSummary"] });
+    },
+  });
+}
+
+export function useClaimDailyCharity() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.claimDailyCharity();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["charityInfo"] });
+      queryClient.invalidateQueries({ queryKey: ["roseSummary"] });
+    },
+  });
+}
+
+export function useGetPostCountByUser(userId: Principal | undefined) {
+  const { actor } = useActor();
+  return useQuery({
+    queryKey: ["postCountByUser", userId?.toString()],
+    queryFn: async () => {
+      if (!userId || !actor) return BigInt(0);
+      return await actor.getPostCountByUser(userId);
+    },
+    enabled: !!userId && !!actor,
+    staleTime: 30_000,
   });
 }

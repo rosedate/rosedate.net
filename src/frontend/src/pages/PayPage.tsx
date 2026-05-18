@@ -17,15 +17,18 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Check,
   Coins,
   Copy,
   ExternalLink,
+  Heart,
   Info,
   MessageCircle,
+  Share2,
   Store,
   TrendingUp,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { ProfileWithPrincipal, RoseTransaction } from "../backend";
 import LoginButton from "../components/LoginButton";
@@ -34,10 +37,14 @@ import { useInternetIdentity } from "../hooks/useInternetIdentity";
 const TX_PAGE_SIZE = 9;
 import {
   useClaimAllRoses,
+  useClaimDailyCharity,
+  useDonateToCharity,
+  useGetCharityInfo,
   useGetDealers,
   useGetIcpUsdExchangeRate,
   useGetRoseSummary,
   useGetRoseTransactionHistory,
+  useGetUserProfile,
   useRequestBuyRoses,
   useRequestSellRoses,
 } from "../hooks/useQueries";
@@ -106,7 +113,10 @@ function DealerCard({
 export default function PayPage() {
   const { identity } = useInternetIdentity();
   const navigate = useNavigate();
-  const { data: roseSummary, isLoading: summaryLoading } = useGetRoseSummary();
+  const { data: roseSummary, isLoading: summaryLoading } = useGetRoseSummary({
+    staleTime: 0,
+    refetchOnMount: true,
+  });
   const { data: transactions, isLoading: transactionsLoading } =
     useGetRoseTransactionHistory();
   const { data: exchangeRate, isLoading: exchangeRateLoading } =
@@ -120,6 +130,56 @@ export default function PayPage() {
   const [sellAmount, setSellAmount] = useState("");
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [txVisible, setTxVisible] = useState(TX_PAGE_SIZE);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentCurrency, setPaymentCurrency] = useState<"rose" | "usd">(
+    "rose",
+  );
+  const [paymentCopied, setPaymentCopied] = useState(false);
+
+  const selfPrincipal = identity?.getPrincipal() ?? null;
+  const { data: currentUserProfile } = useGetUserProfile(selfPrincipal);
+
+  // Charity state
+  const [donateAmount, setDonateAmount] = useState("");
+  const [showDonateConfirm, setShowDonateConfirm] = useState(false);
+  const [claimCountdown, setClaimCountdown] = useState("");
+
+  const { data: charityInfo, isLoading: charityLoading } = useGetCharityInfo();
+  const donateToCharity = useDonateToCharity();
+  const claimDailyCharity = useClaimDailyCharity();
+
+  // Compute whether user can claim (24h cooldown)
+  const canClaim = useCallback(() => {
+    if (!charityInfo?.lastClaimTime) return true;
+    const lastClaim = Number(charityInfo.lastClaimTime) / 1_000_000; // ns → ms
+    return Date.now() - lastClaim >= 24 * 60 * 60 * 1000;
+  }, [charityInfo]);
+
+  // Live countdown timer
+  useEffect(() => {
+    const updateCountdown = () => {
+      if (!charityInfo?.lastClaimTime) {
+        setClaimCountdown("");
+        return;
+      }
+      const lastClaim = Number(charityInfo.lastClaimTime) / 1_000_000;
+      const nextClaim = lastClaim + 24 * 60 * 60 * 1000;
+      const diff = nextClaim - Date.now();
+      if (diff <= 0) {
+        setClaimCountdown("");
+        return;
+      }
+      const h = Math.floor(diff / (1000 * 60 * 60));
+      const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      setClaimCountdown(`Claim again in ${h}h ${m}m`);
+    };
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 60000);
+    return () => clearInterval(timer);
+  }, [charityInfo]);
+
+  const donateFee = donateAmount ? Number.parseFloat(donateAmount) * 0.05 : 0;
+  const donateNet = donateAmount ? Number.parseFloat(donateAmount) * 0.95 : 0;
 
   // Calculate USD equivalents
   const roseBalanceUsd =
@@ -177,6 +237,33 @@ export default function PayPage() {
     } catch (error: unknown) {
       const err = error as Error;
       toast.error(err.message || "Failed to claim Roses");
+    }
+  };
+
+  const handleDonateToCharity = async () => {
+    const amount = Number.parseFloat(donateAmount);
+    if (Number.isNaN(amount) || amount < 0.01) {
+      toast.error("Minimum donation is 0.01 Rose");
+      return;
+    }
+    try {
+      const msg = await donateToCharity.mutateAsync(amount);
+      toast.success(msg);
+      setDonateAmount("");
+      setShowDonateConfirm(false);
+    } catch (error: unknown) {
+      const err = error as Error;
+      toast.error(err.message || "Donation failed");
+    }
+  };
+
+  const handleClaimDailyCharity = async () => {
+    try {
+      const msg = await claimDailyCharity.mutateAsync();
+      toast.success(msg);
+    } catch (error: unknown) {
+      const err = error as Error;
+      toast.error(err.message || "Claim failed");
     }
   };
 
@@ -565,6 +652,268 @@ export default function PayPage() {
             </Card>
           </div>
 
+          {/* Payment Link Card */}
+          {identity && currentUserProfile?.username && (
+            <div className="bg-white rounded-2xl border border-rose-200/60 shadow-sm overflow-hidden mb-4">
+              <div className="bg-gradient-to-r from-pink-500 to-rose-500 px-5 py-3">
+                <h3 className="text-white font-semibold text-base">
+                  My Payment Link
+                </h3>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="flex justify-center">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`${window.location.origin}/pay/${currentUserProfile.username}${paymentAmount ? `?amount=${paymentAmount}&currency=${paymentCurrency}` : ""}`)}`}
+                    alt="Payment QR Code"
+                    className="rounded-xl border border-rose-100"
+                  />
+                </div>
+                <div className="flex items-center gap-2 bg-rose-50 rounded-xl px-3 py-2 border border-rose-100">
+                  <span className="text-xs text-rose-700 font-mono flex-1 truncate">
+                    rosedate.net/pay/{currentUserProfile.username}
+                    {paymentAmount
+                      ? `?amount=${paymentAmount}&currency=${paymentCurrency}`
+                      : ""}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(
+                        `${window.location.origin}/pay/${currentUserProfile.username}${paymentAmount ? `?amount=${paymentAmount}&currency=${paymentCurrency}` : ""}`,
+                      );
+                      setPaymentCopied(true);
+                      setTimeout(() => setPaymentCopied(false), 2000);
+                    }}
+                    className="flex-shrink-0 p-1.5 rounded-lg bg-pink-100 hover:bg-pink-200 text-pink-600 transition-colors"
+                  >
+                    {paymentCopied ? (
+                      <Check className="w-4 h-4" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = `${window.location.origin}/pay/${currentUserProfile.username}${paymentAmount ? `?amount=${paymentAmount}&currency=${paymentCurrency}` : ""}`;
+                      if (navigator.share) {
+                        navigator.share({ url });
+                      } else {
+                        navigator.clipboard.writeText(url);
+                        setPaymentCopied(true);
+                        setTimeout(() => setPaymentCopied(false), 2000);
+                      }
+                    }}
+                    className="flex-shrink-0 p-1.5 rounded-lg bg-pink-100 hover:bg-pink-200 text-pink-600 transition-colors"
+                  >
+                    <Share2 className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentCurrency("rose")}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${paymentCurrency === "rose" ? "bg-pink-500 text-white" : "bg-pink-50 text-pink-600 border border-pink-200"}`}
+                    >
+                      Rose
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentCurrency("usd")}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${paymentCurrency === "usd" ? "bg-pink-500 text-white" : "bg-pink-50 text-pink-600 border border-pink-200"}`}
+                    >
+                      $ USD
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Optional amount"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    className="flex-1 rounded-xl border border-rose-100 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Charity Card */}
+          <Card
+            className="overflow-hidden border-rose-200/60 shadow-sm"
+            data-ocid="charity.card"
+          >
+            <div className="bg-gradient-to-r from-rose-500 to-pink-500 px-5 py-4 flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-xl">
+                <Heart className="h-5 w-5 text-white fill-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-base">Charity Pool</h3>
+                <p className="text-white/80 text-xs">
+                  Donate or claim 0.01 Rose daily
+                </p>
+              </div>
+            </div>
+            <CardContent className="p-5 space-y-5">
+              {/* Pool Balance */}
+              <div className="text-center py-2">
+                {charityLoading ? (
+                  <Skeleton className="h-10 w-40 mx-auto" />
+                ) : (
+                  <>
+                    <p className="text-3xl font-bold text-rose-600">
+                      {charityInfo?.pool.toFixed(4) ?? "0.0000"} 🌹
+                    </p>
+                    {exchangeRate && charityInfo && (
+                      <p className="text-sm text-muted-foreground mt-1">
+                        ≈ ${(charityInfo.pool * exchangeRate).toFixed(2)} USD
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Total pool balance
+                    </p>
+                  </>
+                )}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {/* Donate Section */}
+                <div className="space-y-3 p-4 bg-rose-50/60 rounded-2xl border border-rose-100">
+                  <p className="text-sm font-semibold text-rose-700">
+                    Donate Roses
+                  </p>
+                  <div className="space-y-2">
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      min="0.01"
+                      placeholder="0.0100"
+                      value={donateAmount}
+                      onChange={(e) => {
+                        setDonateAmount(e.target.value);
+                        setShowDonateConfirm(false);
+                      }}
+                      disabled={donateToCharity.isPending}
+                      className="border-rose-200 focus-visible:ring-rose-400"
+                      data-ocid="charity.donate_input"
+                    />
+                    {donateAmount &&
+                      !Number.isNaN(Number.parseFloat(donateAmount)) &&
+                      Number.parseFloat(donateAmount) >= 0.01 && (
+                        <div className="text-xs text-muted-foreground space-y-0.5">
+                          <p>Fee (5%): {donateFee.toFixed(4)} 🌹</p>
+                          <p className="font-medium text-rose-700">
+                            Pool receives: {donateNet.toFixed(4)} 🌹
+                          </p>
+                        </div>
+                      )}
+                  </div>
+                  {!showDonateConfirm ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="w-full bg-rose-500 hover:bg-rose-600 text-white"
+                      disabled={
+                        !donateAmount ||
+                        Number.isNaN(Number.parseFloat(donateAmount)) ||
+                        Number.parseFloat(donateAmount) < 0.01
+                      }
+                      onClick={() => setShowDonateConfirm(true)}
+                      data-ocid="charity.donate_button"
+                    >
+                      <Heart className="h-3.5 w-3.5 mr-1.5" />
+                      Donate
+                    </Button>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-center text-muted-foreground">
+                        Confirm donation of{" "}
+                        {Number.parseFloat(donateAmount).toFixed(4)} 🌹
+                        <br />
+                        <span className="text-rose-600 font-medium">
+                          Pool receives {donateNet.toFixed(4)} 🌹 after 5% fee
+                        </span>
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 border-rose-200"
+                          onClick={() => setShowDonateConfirm(false)}
+                          disabled={donateToCharity.isPending}
+                          data-ocid="charity.cancel_button"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="flex-1 bg-rose-500 hover:bg-rose-600 text-white"
+                          onClick={handleDonateToCharity}
+                          disabled={donateToCharity.isPending}
+                          data-ocid="charity.confirm_button"
+                        >
+                          {donateToCharity.isPending
+                            ? "Donating..."
+                            : "Confirm"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Claim Section */}
+                <div className="space-y-3 p-4 bg-pink-50/60 rounded-2xl border border-pink-100">
+                  <p className="text-sm font-semibold text-pink-700">
+                    Daily Claim
+                  </p>
+                  <div className="text-center py-2">
+                    <p className="text-2xl font-bold text-pink-600">0.01 🌹</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      per day (after 5% fee)
+                    </p>
+                  </div>
+                  {claimCountdown ? (
+                    <div
+                      className="text-center space-y-2"
+                      data-ocid="charity.loading_state"
+                    >
+                      <p className="text-xs font-medium text-rose-600">
+                        {claimCountdown}
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="w-full"
+                        disabled
+                        variant="outline"
+                        data-ocid="charity.claim_button"
+                      >
+                        Already Claimed
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="w-full bg-pink-500 hover:bg-pink-600 text-white"
+                      onClick={handleClaimDailyCharity}
+                      disabled={claimDailyCharity.isPending || !canClaim()}
+                      data-ocid="charity.claim_button"
+                    >
+                      {claimDailyCharity.isPending
+                        ? "Claiming..."
+                        : "Claim 0.01 Rose"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Admin Claim Section */}
           <Card className="border-primary/30">
             <CardHeader>
@@ -611,41 +960,52 @@ export default function PayPage() {
                     const isBuy = tx.transactionType === "buy";
                     const isSell = tx.transactionType === "sell";
                     const isMint = tx.transactionType === "mint";
+                    const isCharityDonate =
+                      tx.transactionType === "charityDonate";
+                    const isCharityClaim =
+                      tx.transactionType === "charityClaim";
+
+                    const txLabel = isMint
+                      ? "Minted"
+                      : isCharityDonate
+                        ? "Charity Donation"
+                        : isCharityClaim
+                          ? "Charity Claim"
+                          : isGift && direction === "sent"
+                            ? "Gift Sent"
+                            : isGift && direction === "received"
+                              ? "Gift Received"
+                              : isBuy
+                                ? "Purchased"
+                                : isSell
+                                  ? "Sold"
+                                  : tx.transactionType;
+
+                    const isOutflow =
+                      direction === "sent" || isSell || isCharityDonate;
+                    const iconColor =
+                      isMint || isCharityClaim
+                        ? "bg-yellow-100 text-yellow-600"
+                        : isCharityDonate
+                          ? "bg-pink-100 text-pink-600"
+                          : isOutflow
+                            ? "bg-rose-100 text-rose-600"
+                            : "bg-green-100 text-green-600";
 
                     return (
                       <Card key={tx.id.toString()}>
                         <CardContent className="p-4">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <div
-                                className={`p-2 rounded-full ${
-                                  isMint
-                                    ? "bg-yellow-100 text-yellow-600"
-                                    : direction === "sent" || isSell
-                                      ? "bg-rose-100 text-rose-600"
-                                      : "bg-green-100 text-green-600"
-                                }`}
-                              >
-                                {direction === "sent" || isSell ? (
+                              <div className={`p-2 rounded-full ${iconColor}`}>
+                                {isOutflow ? (
                                   <ArrowUpRight className="h-4 w-4" />
                                 ) : (
                                   <ArrowDownLeft className="h-4 w-4" />
                                 )}
                               </div>
                               <div>
-                                <p className="font-medium text-sm capitalize">
-                                  {isMint
-                                    ? "Minted"
-                                    : isGift && direction === "sent"
-                                      ? "Gift Sent"
-                                      : isGift && direction === "received"
-                                        ? "Gift Received"
-                                        : isBuy
-                                          ? "Purchased"
-                                          : isSell
-                                            ? "Sold"
-                                            : tx.transactionType}
-                                </p>
+                                <p className="font-medium text-sm">{txLabel}</p>
                                 <p className="text-xs text-muted-foreground">
                                   {new Date(
                                     Number(tx.timestamp) / 1_000_000,
@@ -656,12 +1016,10 @@ export default function PayPage() {
                             <div className="text-right">
                               <p
                                 className={`font-semibold ${
-                                  direction === "sent" || isSell
-                                    ? "text-rose-600"
-                                    : "text-green-600"
+                                  isOutflow ? "text-rose-600" : "text-green-600"
                                 }`}
                               >
-                                {direction === "sent" || isSell ? "-" : "+"}
+                                {isOutflow ? "-" : "+"}
                                 {tx.amount.toFixed(4)} 🌹
                               </p>
                               {tx.feeDistributed > 0 && (

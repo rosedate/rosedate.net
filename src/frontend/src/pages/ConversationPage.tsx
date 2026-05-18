@@ -61,6 +61,7 @@ import {
 } from "../backend";
 import ExpiredMediaPlaceholder from "../components/ExpiredMediaPlaceholder";
 import LoginButton from "../components/LoginButton";
+import PaymentLinkMessageText from "../components/PaymentLinkMessageText";
 import ProfileLinkMessageText from "../components/ProfileLinkMessageText";
 import RoseGiftModal from "../components/RoseGiftModal";
 import VideoRecorder from "../components/VideoRecorder";
@@ -75,7 +76,7 @@ import {
   useGetGroupChats,
   useGetOnlineUsers,
   useGetPinnedConversationMessage,
-  useGetRoseBalance,
+  useGetRoseSummary,
   useGetTypingUsers,
   useGetUserProfile,
   useIsUserBlocked,
@@ -566,7 +567,10 @@ export default function ConversationPage() {
     refetch: refetchConversations,
   } = useGetConversations();
   const { data: groups = [] } = useGetGroupChats();
-  const { data: roseBalance } = useGetRoseBalance();
+  const { data: roseSummary } = useGetRoseSummary({
+    staleTime: 0,
+    refetchOnMount: true,
+  });
   const { data: onlineUsers = [] } = useGetOnlineUsers();
   const sendMessage = useSendMessage();
   const leaveConversation = useLeaveConversation();
@@ -681,12 +685,32 @@ export default function ConversationPage() {
     })
     .filter(Boolean);
 
-  // Update last active every 60 seconds
+  // Update last active every 60 seconds — pauses when tab is hidden
   // biome-ignore lint/correctness/useExhaustiveDependencies: run on mount only
   useEffect(() => {
     updateLastActive.mutate();
-    const interval = setInterval(() => updateLastActive.mutate(), 60000);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | null = setInterval(
+      () => updateLastActive.mutate(),
+      60000,
+    );
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      } else {
+        if (!interval) {
+          interval = setInterval(() => updateLastActive.mutate(), 60000);
+        }
+        updateLastActive.mutate();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   // Mark entire conversation as read on mount and when new messages arrive
@@ -1127,7 +1151,9 @@ export default function ConversationPage() {
                 ) : (
                   <>
                     {message.content.__kind__ === "text" &&
-                      (containsProfileLink(message.content.text) ? (
+                      (message.content.text?.includes("/pay/") ? (
+                        <PaymentLinkMessageText text={message.content.text} />
+                      ) : containsProfileLink(message.content.text) ? (
                         <ProfileLinkMessageText text={message.content.text} />
                       ) : showSearch && searchTerm ? (
                         <p className="text-xs sm:text-sm break-words">
@@ -1722,7 +1748,7 @@ export default function ConversationPage() {
         <RoseGiftModal
           open={showRoseGift}
           recipientName={displayName}
-          currentBalance={roseBalance || 0}
+          currentBalance={roseSummary?.userBalance ?? 0}
           onGift={handleRoseGift}
           onClose={() => setShowRoseGift(false)}
         />

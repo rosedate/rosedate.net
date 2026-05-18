@@ -1,4 +1,4 @@
-import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Outlet, useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useGetCallerUserProfile } from "../hooks/useQueries";
@@ -83,7 +83,7 @@ export default function Layout() {
     refetch: refetchProfile,
   } = useGetCallerUserProfile();
   const [showProfileSetup, setShowProfileSetup] = useState(false);
-  const navigate = useNavigate();
+
   const routerState = useRouterState();
   const prevPathRef = useRef<string>("");
 
@@ -108,21 +108,19 @@ export default function Layout() {
     prevPathRef.current = currentPath;
   }, [routerState.location.pathname, isAuthenticated, refetchProfile]);
 
-  // Handle QR code scanning flow - navigate to chat after login and profile setup
+  // Handle QR code scanning flow - navigate to profile after login and profile setup
   useEffect(() => {
-    const qrTargetUsername = sessionStorage.getItem("qr_target_username");
+    // Clear any stale old-format QR target (username-based, no longer used)
+    sessionStorage.removeItem("qr_target_username");
 
-    if (qrTargetUsername && isAuthenticated && userProfile && !profileLoading) {
-      // User is logged in and has profile, navigate to chat with target user
-      sessionStorage.removeItem("qr_target_username");
+    const qrTargetProfile = sessionStorage.getItem("qr_target_profile");
 
-      // Navigate to users page with QR username parameter to trigger chat
-      navigate({
-        to: "/users",
-        search: { qr_username: qrTargetUsername },
-      });
+    if (qrTargetProfile && isAuthenticated && userProfile && !profileLoading) {
+      // User is logged in and has profile — navigate to the target profile page
+      sessionStorage.removeItem("qr_target_profile");
+      window.location.href = qrTargetProfile;
     }
-  }, [isAuthenticated, userProfile, profileLoading, navigate]);
+  }, [isAuthenticated, userProfile, profileLoading]);
 
   // Show profile setup modal for new users
   useEffect(() => {

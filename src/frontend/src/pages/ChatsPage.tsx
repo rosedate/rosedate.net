@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronDown, MessageCircle, Plus, Users } from "lucide-react";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import CreateGroupChatModal from "../components/CreateGroupChatModal";
 import CreateStoryModal from "../components/CreateStoryModal";
 import { LazyImage } from "../components/LazyImage";
@@ -22,6 +22,7 @@ const CONVOS_PAGE_SIZE = 9;
 export default function ChatsPage() {
   const navigate = useNavigate();
   const { identity } = useInternetIdentity();
+
   const currentPrincipal = identity?.getPrincipal().toString();
 
   const { data: conversations = [], isLoading: convsLoading } =

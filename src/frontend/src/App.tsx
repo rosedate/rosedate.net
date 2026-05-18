@@ -18,6 +18,7 @@ import EmailSettingsPage from "./pages/EmailSettingsPage";
 import GroupChatPage from "./pages/GroupChatPage";
 import PayPage from "./pages/PayPage";
 import PaymentFailurePage from "./pages/PaymentFailurePage";
+import PaymentPage from "./pages/PaymentPage";
 import PaymentSuccessPage from "./pages/PaymentSuccessPage";
 import ProfilePage from "./pages/ProfilePage";
 import SearchPage from "./pages/SearchPage";
@@ -188,6 +189,12 @@ const emailSettingsRoute = createRoute({
   component: EmailSettingsPage,
 });
 
+const paymentPageRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/pay/$username",
+  component: PaymentPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   usersRoute,
@@ -203,6 +210,7 @@ const routeTree = rootRoute.addChildren([
   paymentFailureRoute,
   analyticsRoute,
   emailSettingsRoute,
+  paymentPageRoute,
 ]);
 
 const router = createRouter({

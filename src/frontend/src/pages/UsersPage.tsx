@@ -11,22 +11,60 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import type { Principal } from "@icp-sdk/core/principal";
-import { useNavigate, useSearch } from "@tanstack/react-router";
-import { ChevronDown, Filter, MessageCircle, X } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { ChevronDown, Clock, Filter, MessageCircle, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import { LazyImage } from "../components/LazyImage";
 import { ShimmerSkeleton } from "../components/ShimmerSkeleton";
-import { useFilterProfiles } from "../hooks/useQueries";
+import {
+  formatLastSeen,
+  useAutoUpdateLastActive,
+  useFilterProfiles,
+  useGetLastSeen,
+  useGetOnlineUsers,
+} from "../hooks/useQueries";
 
 const PAGE_SIZE = 49;
 
+// Per-card last-seen sub-component to lazy-fetch only visible cards
+function UserLastSeen({
+  userId,
+  isOnline,
+}: {
+  userId: string;
+  isOnline: boolean;
+}) {
+  const { data: lastSeen } = useGetLastSeen(userId);
+  const label = formatLastSeen(lastSeen);
+
+  if (isOnline) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className="inline-block h-2 w-2 rounded-full bg-green-500 shadow-[0_0_5px_1px_rgba(34,197,94,0.5)]" />
+        <span className="text-xs font-medium text-green-600">Online now</span>
+      </div>
+    );
+  }
+  if (!label) return null;
+  return (
+    <div className="flex items-center gap-1.5 text-muted-foreground">
+      <Clock className="h-3 w-3 shrink-0" />
+      <span className="text-xs">{label}</span>
+    </div>
+  );
+}
+
 export default function UsersPage() {
   const navigate = useNavigate();
-  const search = useSearch({ from: "/users" }) as { qr_username?: string };
+  // Keep current user's heartbeat alive while on this page
+  useAutoUpdateLastActive();
+
+  const { data: onlineUsers = [] } = useGetOnlineUsers();
 
   const [showFilters, setShowFilters] = useState(false);
+  const [onlineOnly, setOnlineOnly] = useState(false);
   const [country, setCountry] = useState("");
   const [minAge, setMinAge] = useState("");
   const [maxAge, setMaxAge] = useState("");
@@ -40,7 +78,7 @@ export default function UsersPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally watching filter values to reset pagination
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [country, minAge, maxAge, gender, minBalance]);
+  }, [country, minAge, maxAge, gender, minBalance, onlineOnly]);
 
   const { data: profiles, isLoading } = useFilterProfiles({
     country: country || undefined,
@@ -49,6 +87,7 @@ export default function UsersPage() {
     maxAge: maxAge ? BigInt(maxAge) : undefined,
     gender: gender && gender !== "any" ? gender : undefined,
     minBalance: minBalance[0] > 0 ? minBalance[0] : undefined,
+    onlineOnly: onlineOnly ? true : undefined,
   });
 
   // Sort profiles alphabetically by username, then slice for current page
@@ -68,32 +107,8 @@ export default function UsersPage() {
     setVisibleCount((prev) => prev + PAGE_SIZE);
   };
 
-  // Handle QR code username navigation
-  useEffect(() => {
-    if (search.qr_username && profiles && profiles.length > 0) {
-      // Find the user by username
-      const targetUser = profiles.find(
-        (p) => p.profile.username === search.qr_username,
-      );
-
-      if (targetUser) {
-        // Navigate to chat with this user using their principal
-        navigate({
-          to: "/chats/$conversationId",
-          params: { conversationId: targetUser.principal.toString() },
-        });
-      } else {
-        // User not found in current filter, try fetching all users by clearing filters
-        toast.error(
-          `User @${search.qr_username} not found. Please try searching for them.`,
-        );
-        // Clear the search parameter
-        navigate({ to: "/users", search: {} });
-      }
-    }
-  }, [search.qr_username, profiles, navigate]);
-
   const handleClearFilters = () => {
+    setOnlineOnly(false);
     setCountry("");
     setMinAge("");
     setMaxAge("");
@@ -108,10 +123,10 @@ export default function UsersPage() {
     });
   };
 
-  const handleProfileClick = (userId: Principal) => {
+  const handleProfileClick = (userId: Principal, username?: string) => {
     navigate({
       to: "/users/$userId",
-      params: { userId: userId.toString() },
+      params: { userId: username || userId.toString() },
     });
   };
 
@@ -144,6 +159,31 @@ export default function UsersPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3 sm:space-y-4 p-4 sm:p-6 pt-0">
+            {/* Online Only toggle — always shown first */}
+            <div
+              className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-4 py-3"
+              data-ocid="users.online_only.toggle"
+            >
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500 shadow-[0_0_6px_2px_rgba(34,197,94,0.5)]" />
+                <Label
+                  htmlFor="onlineOnly"
+                  className="cursor-pointer text-sm font-semibold text-foreground"
+                >
+                  Online Only
+                </Label>
+                <span className="text-xs text-muted-foreground">
+                  Show currently active users
+                </span>
+              </div>
+              <Switch
+                id="onlineOnly"
+                checked={onlineOnly}
+                onCheckedChange={setOnlineOnly}
+                className="data-[state=checked]:bg-primary"
+              />
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
                 <Label htmlFor="country" className="text-sm">
@@ -253,7 +293,12 @@ export default function UsersPage() {
                 <CardContent className="p-4 sm:p-6">
                   <div
                     className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4 cursor-pointer"
-                    onClick={() => handleProfileClick(profileData.principal)}
+                    onClick={() =>
+                      handleProfileClick(
+                        profileData.principal,
+                        profileData.profile.username,
+                      )
+                    }
                   >
                     {profileData.profile.profilePicture ? (
                       <LazyImage
@@ -279,6 +324,12 @@ export default function UsersPage() {
                       <p className="text-xs text-muted-foreground truncate">
                         {profileData.profile.country}
                       </p>
+                      <UserLastSeen
+                        userId={profileData.principal.toString()}
+                        isOnline={onlineUsers.includes(
+                          profileData.principal.toString(),
+                        )}
+                      />
                     </div>
                   </div>
 

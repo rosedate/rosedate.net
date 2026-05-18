@@ -18,10 +18,12 @@ export function parseProfileLinks(text: string): TextSegment[] {
   const segments: TextSegment[] = [];
   const currentOrigin = window.location.origin;
 
-  // Pattern to match /users/<principal> in both absolute and relative forms
-  // Principal format: lowercase alphanumeric with hyphens, typically 5 segments separated by hyphens
+  // Pattern matches both:
+  // - /users/<principal> (old format: 5-segment lowercase alphanumeric with hyphens)
+  // - /users/<username>  (new format: 3-30 chars, alphanumeric + underscores, no hyphens at start)
+  // Both absolute (with origin) and relative forms are matched.
   const profileLinkPattern = new RegExp(
-    `(?:${escapeRegex(currentOrigin)})?/users/([a-z0-9]{5}-[a-z0-9]{5}-[a-z0-9]{5}-[a-z0-9]{5}-[a-z0-9]{5}-[a-z0-9]{5}-[a-z0-9]{5}-[a-z0-9]{5}-[a-z0-9]{5}-[a-z0-9]{5}-[a-z0-9]{3})`,
+    `(?:${escapeRegex(currentOrigin)})?/users/([a-zA-Z0-9_][a-zA-Z0-9_-]{2,29})`,
     "gi",
   );
 

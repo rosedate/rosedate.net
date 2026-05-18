@@ -120,6 +120,7 @@ export const Message = IDL.Record({
 export const ProfileFilter = IDL.Record({
   'country' : IDL.Opt(IDL.Text),
   'minAge' : IDL.Opt(IDL.Nat),
+  'onlineOnly' : IDL.Opt(IDL.Bool),
   'gender' : IDL.Opt(IDL.Text),
   'maxAge' : IDL.Opt(IDL.Nat),
   'minBalance' : IDL.Opt(IDL.Float64),
@@ -148,9 +149,11 @@ export const BlockRecord = IDL.Record({
 export const RoseTransactionType = IDL.Variant({
   'buy' : IDL.Null,
   'fee' : IDL.Null,
+  'charityClaim' : IDL.Null,
   'gift' : IDL.Null,
   'mint' : IDL.Null,
   'sell' : IDL.Null,
+  'charityDonate' : IDL.Null,
   'transfer' : IDL.Null,
 });
 export const RoseTransaction = IDL.Record({
@@ -360,6 +363,7 @@ export const idlService = IDL.Service({
   'blockUser' : IDL.Func([IDL.Principal], [], []),
   'buyRosesFromUser' : IDL.Func([IDL.Principal, IDL.Float64], [], []),
   'claimAllRoses' : IDL.Func([], [], []),
+  'claimDailyCharity' : IDL.Func([], [IDL.Text], []),
   'cleanupExpiredStories' : IDL.Func([], [IDL.Nat], []),
   'clearAllNotifications' : IDL.Func([], [], []),
   'commentOnPost' : IDL.Func([IDL.Text, IDL.Text, IDL.Opt(IDL.Nat)], [], []),
@@ -399,6 +403,7 @@ export const idlService = IDL.Service({
     ),
   'deleteNotification' : IDL.Func([IDL.Nat], [], []),
   'deletePost' : IDL.Func([IDL.Text], [], []),
+  'donateToCharity' : IDL.Func([IDL.Float64], [IDL.Text], []),
   'editGroupMessage' : IDL.Func(
       [IDL.Nat, IDL.Nat, IDL.Text],
       [IDL.Variant({ 'ok' : GroupMessage, 'err' : IDL.Text })],
@@ -415,7 +420,7 @@ export const idlService = IDL.Service({
       [],
     ),
   'filterProfiles' : IDL.Func(
-      [ProfileFilter],
+      [ProfileFilter, IDL.Nat, IDL.Nat],
       [IDL.Vec(ProfileWithPrincipal)],
       ['query'],
     ),
@@ -460,7 +465,7 @@ export const idlService = IDL.Service({
       ],
       ['query'],
     ),
-  'getCallerPosts' : IDL.Func([], [IDL.Vec(Post)], ['query']),
+  'getCallerPosts' : IDL.Func([IDL.Nat, IDL.Nat], [IDL.Vec(Post)], ['query']),
   'getCallerUserAnalytics' : IDL.Func(
       [],
       [IDL.Variant({ 'ok' : UserAnalytics, 'err' : IDL.Text })],
@@ -468,6 +473,16 @@ export const idlService = IDL.Service({
     ),
   'getCallerUserProfile' : IDL.Func([], [UserProfile], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+  'getCharityInfo' : IDL.Func(
+      [],
+      [
+        IDL.Record({
+          'pool' : IDL.Float64,
+          'lastClaimTime' : IDL.Opt(IDL.Int),
+        }),
+      ],
+      ['query'],
+    ),
   'getConversations' : IDL.Func([], [IDL.Vec(Conversation)], ['query']),
   'getFollowerCount' : IDL.Func([IDL.Principal], [IDL.Nat], ['query']),
   'getFollowingCount' : IDL.Func([IDL.Principal], [IDL.Nat], ['query']),
@@ -480,6 +495,7 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'getIcpUsdExchangeRate' : IDL.Func([], [IDL.Float64], []),
+  'getLastSeen' : IDL.Func([IDL.Principal], [IDL.Opt(IDL.Int)], ['query']),
   'getNotificationCountByType' : IDL.Func([], [NotificationCount], ['query']),
   'getNotifications' : IDL.Func(
       [IDL.Nat, IDL.Nat],
@@ -510,6 +526,7 @@ export const idlService = IDL.Service({
       [IDL.Vec(CommentInteraction)],
       ['query'],
     ),
+  'getPostCountByUser' : IDL.Func([IDL.Principal], [IDL.Nat], ['query']),
   'getPostInteractions' : IDL.Func(
       [IDL.Text],
       [
@@ -525,7 +542,7 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'getPostViewCount' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
-  'getPosts' : IDL.Func([], [IDL.Vec(Post)], ['query']),
+  'getPosts' : IDL.Func([IDL.Nat, IDL.Nat], [IDL.Vec(Post)], ['query']),
   'getPostsFromFollowedUsers' : IDL.Func([], [IDL.Vec(Post)], ['query']),
   'getRoseBalance' : IDL.Func([], [IDL.Float64], ['query']),
   'getRoseSummary' : IDL.Func(
@@ -544,7 +561,7 @@ export const idlService = IDL.Service({
       [IDL.Vec(RoseTransaction)],
       ['query'],
     ),
-  'getSavedPosts' : IDL.Func([], [IDL.Vec(Post)], ['query']),
+  'getSavedPosts' : IDL.Func([IDL.Nat, IDL.Nat], [IDL.Vec(Post)], ['query']),
   'getStoryReactions' : IDL.Func(
       [IDL.Nat],
       [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Vec(IDL.Principal)))],
@@ -555,7 +572,16 @@ export const idlService = IDL.Service({
   'getTypingUsers' : IDL.Func([IDL.Nat], [IDL.Vec(IDL.Principal)], ['query']),
   'getUnreadCounts' : IDL.Func([], [UnreadCounts], ['query']),
   'getUnreadNotificationCount' : IDL.Func([], [IDL.Nat], ['query']),
-  'getUserPosts' : IDL.Func([IDL.Principal], [IDL.Vec(Post)], ['query']),
+  'getUserByUsername' : IDL.Func(
+      [IDL.Text],
+      [IDL.Opt(IDL.Principal)],
+      ['query'],
+    ),
+  'getUserPosts' : IDL.Func(
+      [IDL.Principal, IDL.Nat, IDL.Nat],
+      [IDL.Vec(Post)],
+      ['query'],
+    ),
   'getUserProfile' : IDL.Func(
       [IDL.Record({ 'profileId' : IDL.Principal })],
       [UserProfile],
@@ -812,6 +838,7 @@ export const idlFactory = ({ IDL }) => {
   const ProfileFilter = IDL.Record({
     'country' : IDL.Opt(IDL.Text),
     'minAge' : IDL.Opt(IDL.Nat),
+    'onlineOnly' : IDL.Opt(IDL.Bool),
     'gender' : IDL.Opt(IDL.Text),
     'maxAge' : IDL.Opt(IDL.Nat),
     'minBalance' : IDL.Opt(IDL.Float64),
@@ -840,9 +867,11 @@ export const idlFactory = ({ IDL }) => {
   const RoseTransactionType = IDL.Variant({
     'buy' : IDL.Null,
     'fee' : IDL.Null,
+    'charityClaim' : IDL.Null,
     'gift' : IDL.Null,
     'mint' : IDL.Null,
     'sell' : IDL.Null,
+    'charityDonate' : IDL.Null,
     'transfer' : IDL.Null,
   });
   const RoseTransaction = IDL.Record({
@@ -1049,6 +1078,7 @@ export const idlFactory = ({ IDL }) => {
     'blockUser' : IDL.Func([IDL.Principal], [], []),
     'buyRosesFromUser' : IDL.Func([IDL.Principal, IDL.Float64], [], []),
     'claimAllRoses' : IDL.Func([], [], []),
+    'claimDailyCharity' : IDL.Func([], [IDL.Text], []),
     'cleanupExpiredStories' : IDL.Func([], [IDL.Nat], []),
     'clearAllNotifications' : IDL.Func([], [], []),
     'commentOnPost' : IDL.Func([IDL.Text, IDL.Text, IDL.Opt(IDL.Nat)], [], []),
@@ -1088,6 +1118,7 @@ export const idlFactory = ({ IDL }) => {
       ),
     'deleteNotification' : IDL.Func([IDL.Nat], [], []),
     'deletePost' : IDL.Func([IDL.Text], [], []),
+    'donateToCharity' : IDL.Func([IDL.Float64], [IDL.Text], []),
     'editGroupMessage' : IDL.Func(
         [IDL.Nat, IDL.Nat, IDL.Text],
         [IDL.Variant({ 'ok' : GroupMessage, 'err' : IDL.Text })],
@@ -1104,7 +1135,7 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'filterProfiles' : IDL.Func(
-        [ProfileFilter],
+        [ProfileFilter, IDL.Nat, IDL.Nat],
         [IDL.Vec(ProfileWithPrincipal)],
         ['query'],
       ),
@@ -1149,7 +1180,7 @@ export const idlFactory = ({ IDL }) => {
         ],
         ['query'],
       ),
-    'getCallerPosts' : IDL.Func([], [IDL.Vec(Post)], ['query']),
+    'getCallerPosts' : IDL.Func([IDL.Nat, IDL.Nat], [IDL.Vec(Post)], ['query']),
     'getCallerUserAnalytics' : IDL.Func(
         [],
         [IDL.Variant({ 'ok' : UserAnalytics, 'err' : IDL.Text })],
@@ -1157,6 +1188,16 @@ export const idlFactory = ({ IDL }) => {
       ),
     'getCallerUserProfile' : IDL.Func([], [UserProfile], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+    'getCharityInfo' : IDL.Func(
+        [],
+        [
+          IDL.Record({
+            'pool' : IDL.Float64,
+            'lastClaimTime' : IDL.Opt(IDL.Int),
+          }),
+        ],
+        ['query'],
+      ),
     'getConversations' : IDL.Func([], [IDL.Vec(Conversation)], ['query']),
     'getFollowerCount' : IDL.Func([IDL.Principal], [IDL.Nat], ['query']),
     'getFollowingCount' : IDL.Func([IDL.Principal], [IDL.Nat], ['query']),
@@ -1173,6 +1214,7 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'getIcpUsdExchangeRate' : IDL.Func([], [IDL.Float64], []),
+    'getLastSeen' : IDL.Func([IDL.Principal], [IDL.Opt(IDL.Int)], ['query']),
     'getNotificationCountByType' : IDL.Func([], [NotificationCount], ['query']),
     'getNotifications' : IDL.Func(
         [IDL.Nat, IDL.Nat],
@@ -1203,6 +1245,7 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(CommentInteraction)],
         ['query'],
       ),
+    'getPostCountByUser' : IDL.Func([IDL.Principal], [IDL.Nat], ['query']),
     'getPostInteractions' : IDL.Func(
         [IDL.Text],
         [
@@ -1218,7 +1261,7 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'getPostViewCount' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
-    'getPosts' : IDL.Func([], [IDL.Vec(Post)], ['query']),
+    'getPosts' : IDL.Func([IDL.Nat, IDL.Nat], [IDL.Vec(Post)], ['query']),
     'getPostsFromFollowedUsers' : IDL.Func([], [IDL.Vec(Post)], ['query']),
     'getRoseBalance' : IDL.Func([], [IDL.Float64], ['query']),
     'getRoseSummary' : IDL.Func(
@@ -1237,7 +1280,7 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(RoseTransaction)],
         ['query'],
       ),
-    'getSavedPosts' : IDL.Func([], [IDL.Vec(Post)], ['query']),
+    'getSavedPosts' : IDL.Func([IDL.Nat, IDL.Nat], [IDL.Vec(Post)], ['query']),
     'getStoryReactions' : IDL.Func(
         [IDL.Nat],
         [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Vec(IDL.Principal)))],
@@ -1248,7 +1291,16 @@ export const idlFactory = ({ IDL }) => {
     'getTypingUsers' : IDL.Func([IDL.Nat], [IDL.Vec(IDL.Principal)], ['query']),
     'getUnreadCounts' : IDL.Func([], [UnreadCounts], ['query']),
     'getUnreadNotificationCount' : IDL.Func([], [IDL.Nat], ['query']),
-    'getUserPosts' : IDL.Func([IDL.Principal], [IDL.Vec(Post)], ['query']),
+    'getUserByUsername' : IDL.Func(
+        [IDL.Text],
+        [IDL.Opt(IDL.Principal)],
+        ['query'],
+      ),
+    'getUserPosts' : IDL.Func(
+        [IDL.Principal, IDL.Nat, IDL.Nat],
+        [IDL.Vec(Post)],
+        ['query'],
+      ),
     'getUserProfile' : IDL.Func(
         [IDL.Record({ 'profileId' : IDL.Principal })],
         [UserProfile],

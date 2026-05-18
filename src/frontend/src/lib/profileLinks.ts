@@ -3,13 +3,13 @@
  */
 
 /**
- * Builds an absolute profile URL for a given userId
- * @param userId - The principal ID of the user
+ * Builds an absolute profile URL for a given user identifier (username or principal ID)
+ * @param userIdentifier - The username or principal ID of the user
  * @returns The absolute URL to the user's profile
  */
-export function buildProfileUrl(userId: string): string {
+export function buildProfileUrl(userIdentifier: string): string {
   const origin = window.location.origin;
-  return `${origin}/users/${userId}`;
+  return `${origin}/users/${userIdentifier}`;
 }
 
 /**

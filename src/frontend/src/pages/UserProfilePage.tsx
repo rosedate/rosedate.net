@@ -19,6 +19,7 @@ import {
   Edit3,
   Eye,
   Heart,
+  Link,
   Loader2,
   MessageCircle,
   MessageSquare,
@@ -42,6 +43,7 @@ import RoseGiftModal from "../components/RoseGiftModal";
 import { getMimeType } from "../lib/mimeTypes";
 
 const POSTS_PAGE_SIZE = 9;
+import { toast } from "sonner";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useBlockUser,
@@ -56,7 +58,8 @@ import {
   useGetPinnedStories,
   useGetPostComments,
   useGetPostInteractions,
-  useGetRoseBalance,
+  useGetRoseSummary,
+  useGetUserByUsername,
   useGetUserPosts,
   useGetUserProfile,
   useGiftRosesOnPost,
@@ -342,7 +345,10 @@ function PostCard({
   const deletePostMutation = useDeletePost();
   const editPostMutation = useEditPost();
   const giftRosesOnPost = useGiftRosesOnPost();
-  const { data: roseBalance = 0 } = useGetRoseBalance();
+  const { data: roseSummary } = useGetRoseSummary({
+    staleTime: 0,
+    refetchOnMount: true,
+  });
   const { data: authorProfile } = useGetUserProfile(post.author.toString());
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
@@ -511,7 +517,7 @@ function PostCard({
         onClose={() => setGiftOpen(false)}
         onGift={handleGift}
         recipientName={recipientName}
-        currentBalance={roseBalance}
+        currentBalance={roseSummary?.userBalance ?? 0}
       />
     </div>
   );
@@ -921,13 +927,30 @@ export default function UserProfilePage() {
   const { identity } = useInternetIdentity();
   const currentUserPrincipal = identity?.getPrincipal().toString() ?? "";
 
+  // Detect if userId is a principal (contains '-' with typical ICP principal pattern)
+  // or a username (alphanumeric, no long dash-separated segments)
+  const isPrincipalFormat =
+    /^[a-z0-9]{5}(-[a-z0-9]{5}){4,}(-[a-z0-9]{3})?$/.test(userId);
+
+  // If it looks like a username, resolve it to a principal first
+  const { data: resolvedPrincipalFromUsername } = useGetUserByUsername(
+    isPrincipalFormat ? null : userId,
+  );
+
+  // The actual principal to use for profile loading
+  const resolvedUserId = isPrincipalFormat
+    ? userId
+    : (resolvedPrincipalFromUsername?.toText() ?? null);
+
   const { data: profile, isLoading: profileLoading } =
-    useGetUserProfile(userId);
-  const { data: posts, isLoading: postsLoading } = useGetUserPosts(userId);
-  const { data: followerCount } = useGetFollowerCount(userId);
-  const { data: followingCount } = useGetFollowingCount(userId);
-  const { data: isFollowing } = useIsFollowing(userId);
-  const { data: isBlocked } = useIsUserBlocked(userId);
+    useGetUserProfile(resolvedUserId);
+  const { data: posts, isLoading: postsLoading } = useGetUserPosts(
+    resolvedUserId ?? "",
+  );
+  const { data: followerCount } = useGetFollowerCount(resolvedUserId ?? "");
+  const { data: followingCount } = useGetFollowingCount(resolvedUserId ?? "");
+  const { data: isFollowing } = useIsFollowing(resolvedUserId ?? "");
+  const { data: isBlocked } = useIsUserBlocked(resolvedUserId ?? "");
   const { data: onlineUsers = [] } = useGetOnlineUsers();
 
   const followMutation = useFollowUser();
@@ -937,7 +960,11 @@ export default function UserProfilePage() {
 
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [visiblePostCount, setVisiblePostCount] = useState(POSTS_PAGE_SIZE);
+  const [copyLinkLabel, setCopyLinkLabel] = useState<"copy" | "copied">("copy");
 
+  // Use the resolved principal for identity comparisons
+  const effectiveUserId = resolvedUserId ?? userId;
+  const isOwnProfile = effectiveUserId === currentUserPrincipal;
   // Sort posts newest first
   const sortedPosts = useMemo(() => {
     if (!posts) return [];
@@ -945,26 +972,40 @@ export default function UserProfilePage() {
   }, [posts]);
 
   const visiblePosts = sortedPosts.slice(0, visiblePostCount);
-  const hasMorePosts = sortedPosts.length > visiblePostCount;
+  // All posts are fetched by useGetUserPosts (limit=1000) so sortedPosts.length
+  // is always the authoritative total. Never use postCount from a separate query
+  // here — it can lag behind or differ, causing hasMorePosts to stay false.
+  const hasMorePosts = visiblePostCount < sortedPosts.length;
 
   // Navigate to another user's profile using the correct route /users/$userId
   const handleNavigateToProfile = useCallback(
     (pid: string) => {
-      if (pid !== userId) {
+      if (pid !== effectiveUserId) {
         navigate({ to: "/users/$userId", params: { userId: pid } });
       }
     },
-    [navigate, userId],
+    [navigate, effectiveUserId],
   );
 
-  const isOwnProfile = userId === currentUserPrincipal;
+  const handleCopyProfileLink = useCallback(async () => {
+    const identifier = profile?.username || effectiveUserId;
+    const url = `${window.location.origin}/users/${encodeURIComponent(identifier)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopyLinkLabel("copied");
+      toast.success("Profile link copied!");
+      setTimeout(() => setCopyLinkLabel("copy"), 2000);
+    } catch {
+      toast.error("Failed to copy link");
+    }
+  }, [profile?.username, effectiveUserId]);
 
   const avatarUrl = profile?.profilePicture
     ? profile.profilePicture.getDirectURL()
     : null;
   const initials = getInitials(profile?.name, userId);
 
-  if (profileLoading) {
+  if (profileLoading || (!resolvedUserId && !isPrincipalFormat)) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-rose-50/50 to-background">
         <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
@@ -985,6 +1026,14 @@ export default function UserProfilePage() {
   }
 
   if (!profile) {
+    // If we're still resolving username → principal, show loading
+    if (!isPrincipalFormat && resolvedPrincipalFromUsername === undefined) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -998,7 +1047,7 @@ export default function UserProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-rose-50/50 to-background pb-20">
+    <div className="min-h-screen bg-gradient-to-b from-rose-50/50 to-background pb-28">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-rose-100 px-4 py-3">
         <div className="flex items-center gap-3 max-w-2xl mx-auto">
@@ -1030,16 +1079,30 @@ export default function UserProfilePage() {
                 <h1 className="text-xl font-bold text-foreground">
                   {profile.name}
                 </h1>
-                {onlineUsers.includes(userId) && (
+                {onlineUsers.includes(effectiveUserId) && (
                   <span
                     className="w-2.5 h-2.5 rounded-full bg-green-400 shrink-0 animate-pulse"
                     aria-label="Online"
                   />
                 )}
               </div>
-              <p className="text-sm text-rose-600 font-medium">
-                @{profile.username}
-              </p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm text-rose-600 font-medium">
+                  @{profile.username}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCopyProfileLink}
+                  className="p-0.5 rounded text-rose-400 hover:text-rose-600 transition-colors"
+                  aria-label="Copy profile link"
+                  title={
+                    copyLinkLabel === "copied" ? "Copied!" : "Copy profile link"
+                  }
+                  data-ocid="profile.copy_link_button"
+                >
+                  <Link className="w-3.5 h-3.5" />
+                </button>
+              </div>
               {profile.country && (
                 <p className="text-xs text-muted-foreground mt-0.5">
                   📍 {profile.country}
@@ -1074,9 +1137,11 @@ export default function UserProfilePage() {
                 className={`flex-1 rounded-full text-sm ${isFollowing ? "bg-rose-100 text-rose-700 hover:bg-rose-200" : "bg-rose-500 hover:bg-rose-600 text-white"}`}
                 onClick={() => {
                   if (isFollowing) {
-                    unfollowMutation.mutate(Principal.fromText(userId));
+                    unfollowMutation.mutate(
+                      Principal.fromText(effectiveUserId),
+                    );
                   } else {
-                    followMutation.mutate(Principal.fromText(userId));
+                    followMutation.mutate(Principal.fromText(effectiveUserId));
                   }
                 }}
                 disabled={
@@ -1101,7 +1166,7 @@ export default function UserProfilePage() {
                 onClick={() =>
                   navigate({
                     to: "/chats/$conversationId",
-                    params: { conversationId: userId },
+                    params: { conversationId: effectiveUserId },
                   })
                 }
               >
@@ -1114,9 +1179,9 @@ export default function UserProfilePage() {
                 className={`rounded-full ${isBlocked ? "border-green-200 text-green-700 hover:bg-green-50" : "border-red-200 text-red-600 hover:bg-red-50"}`}
                 onClick={() => {
                   if (isBlocked) {
-                    unblockMutation.mutate(Principal.fromText(userId));
+                    unblockMutation.mutate(Principal.fromText(effectiveUserId));
                   } else {
-                    blockMutation.mutate(Principal.fromText(userId));
+                    blockMutation.mutate(Principal.fromText(effectiveUserId));
                   }
                 }}
                 disabled={blockMutation.isPending || unblockMutation.isPending}
@@ -1132,7 +1197,10 @@ export default function UserProfilePage() {
         </div>
 
         {/* Highlights */}
-        <HighlightsSection userId={userId} isOwnProfile={isOwnProfile} />
+        <HighlightsSection
+          userId={effectiveUserId}
+          isOwnProfile={isOwnProfile}
+        />
 
         {/* Posts */}
         <div className="space-y-4">
@@ -1158,15 +1226,18 @@ export default function UserProfilePage() {
                 />
               ))}
               {hasMorePosts && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setVisiblePostCount((v) => v + POSTS_PAGE_SIZE)
-                  }
-                  className="w-full py-2.5 rounded-2xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors text-sm font-medium"
-                >
-                  View More ({sortedPosts.length - visiblePostCount} remaining)
-                </button>
+                <div className="pb-24">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVisiblePostCount((v) => v + POSTS_PAGE_SIZE)
+                    }
+                    className="w-full py-2.5 rounded-2xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors text-sm font-medium"
+                  >
+                    View More ({sortedPosts.length - visiblePostCount}{" "}
+                    remaining)
+                  </button>
+                </div>
               )}
             </>
           ) : (

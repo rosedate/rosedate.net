@@ -174,7 +174,7 @@ type RoseGiftOnStory__1045707128 =
     timestamp : Time__38388344
   };
 type RoseTransactionType__954121714 =
-  {#buy; #fee; #gift; #mint; #sell; #transfer};
+  {#buy; #charityClaim; #charityDonate; #fee; #gift; #mint; #sell; #transfer};
 type RoseTransaction__310589703 =
   {
     amount : Float;
@@ -236,6 +236,9 @@ actor {
       var size : Nat__490723111
     };
   stable var blockRecords : [BlockRecord__824067733];
+  stable var charityLastClaimMap :
+    {var root : Node__46230540<Principal, Int>; var size : Nat__490723111};
+  stable var charityPool : Float;
   stable var commentsMap :
     {
       var root : Node__46230540<Text, [CommentInteraction__393041]>;

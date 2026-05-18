@@ -43,6 +43,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { type Conversation, ExternalBlob, type GroupMessage } from "../backend";
 import ExpiredMediaPlaceholder from "../components/ExpiredMediaPlaceholder";
+import PaymentLinkMessageText from "../components/PaymentLinkMessageText";
+import ProfileLinkMessageText from "../components/ProfileLinkMessageText";
 import VideoRecorder from "../components/VideoRecorder";
 import VoiceRecorder from "../components/VoiceRecorder";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
@@ -72,6 +74,7 @@ import {
 } from "../hooks/useQueries";
 import { isMediaExpired } from "../lib/mediaExpiration";
 import { getMimeType } from "../lib/mimeTypes";
+import { containsProfileLink } from "../lib/profileLinkDetection";
 
 const MEMBERS_PAGE_SIZE = 19;
 const EMOJI_OPTIONS = ["❤️", "😂", "😮", "😢", "😡", "👍"] as const;
@@ -880,12 +883,32 @@ export default function GroupChatPage() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [refetchMessages]);
 
-  // Update last active every 60 seconds
+  // Update last active every 60 seconds — pauses when tab is hidden
   // biome-ignore lint/correctness/useExhaustiveDependencies: run on mount only
   useEffect(() => {
     updateLastActive.mutate();
-    const interval = setInterval(() => updateLastActive.mutate(), 60000);
-    return () => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | null = setInterval(
+      () => updateLastActive.mutate(),
+      60000,
+    );
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      } else {
+        if (!interval) {
+          interval = setInterval(() => updateLastActive.mutate(), 60000);
+        }
+        updateLastActive.mutate();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   // Cleanup typing on unmount
@@ -1249,7 +1272,23 @@ export default function GroupChatPage() {
     timestamp: bigint,
     isText: boolean,
   ) => {
-    if (isText && content.__kind__ === "text")
+    if (isText && content.__kind__ === "text") {
+      if (containsProfileLink(content.text)) {
+        return (
+          <>
+            <ProfileLinkMessageText
+              text={content.text}
+              className="text-sm whitespace-pre-wrap break-words"
+            />
+            {content.text?.includes("/pay/") && (
+              <PaymentLinkMessageText text={content.text} />
+            )}
+          </>
+        );
+      }
+      if (content.text?.includes("/pay/")) {
+        return <PaymentLinkMessageText text={content.text} />;
+      }
       return (
         <p className="text-sm whitespace-pre-wrap break-words">
           {showSearch && searchTerm ? (
@@ -1259,10 +1298,25 @@ export default function GroupChatPage() {
           )}
         </p>
       );
+    }
     if (content.__kind__ === "text")
       return (
         <p className="text-sm whitespace-pre-wrap break-words">
-          {content.text}
+          {containsProfileLink(content.text) ? (
+            <>
+              <ProfileLinkMessageText
+                text={content.text}
+                className="text-sm whitespace-pre-wrap break-words"
+              />
+              {content.text?.includes("/pay/") && (
+                <PaymentLinkMessageText text={content.text} />
+              )}
+            </>
+          ) : content.text?.includes("/pay/") ? (
+            <PaymentLinkMessageText text={content.text} />
+          ) : (
+            content.text
+          )}
         </p>
       );
     if (content.__kind__ === "image") {

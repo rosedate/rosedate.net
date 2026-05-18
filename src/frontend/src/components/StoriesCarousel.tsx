@@ -24,7 +24,7 @@ import {
   useGetConversations,
   useGetGroupChats,
   useGetPinnedStories,
-  useGetRoseBalance,
+  useGetRoseSummary,
   useGetStoryReactions,
   useGetUserProfile,
   useGiftRosesOnStory,
@@ -616,7 +616,10 @@ function StoryInteractions({
   const pinStory = usePinStory();
   const unpinStory = useUnpinStory();
   const giftRosesOnStory = useGiftRosesOnStory();
-  const { data: roseBalance = 0 } = useGetRoseBalance();
+  const { data: roseSummary } = useGetRoseSummary({
+    staleTime: 0,
+    refetchOnMount: true,
+  });
 
   const { data: authorProfile } = useGetUserProfile(story.author);
 
@@ -709,7 +712,7 @@ function StoryInteractions({
             authorProfile?.name ||
             story.author.toString().slice(0, 12)
           }
-          currentBalance={roseBalance}
+          currentBalance={roseSummary?.userBalance ?? 0}
         />
       )}
     </>

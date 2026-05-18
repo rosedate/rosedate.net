@@ -38,6 +38,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { ExternalBlob } from "../backend";
 import LoginButton from "../components/LoginButton";
+import QRCodeModal from "../components/QRCodeModal";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useDeleteCallerProfile,
@@ -62,6 +63,7 @@ export default function ProfilePage() {
   const deleteProfile = useDeleteCallerProfile();
 
   const [isEditing, setIsEditing] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [country, setCountry] = useState("");
@@ -305,7 +307,7 @@ export default function ProfilePage() {
                   </div>
                 )}
 
-                <div className="pt-4 border-t flex flex-col sm:flex-row gap-2">
+                <div className="pt-4 border-t flex flex-col sm:flex-row gap-2 flex-wrap">
                   {isAdmin && (
                     <Button
                       variant="outline"
@@ -317,6 +319,20 @@ export default function ProfilePage() {
                       Analytics
                     </Button>
                   )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto"
+                    onClick={() => setShowQRModal(true)}
+                    data-ocid="profile.show_qr_button"
+                  >
+                    <img
+                      src="/assets/generated/qr-code-icon-transparent.dim_24x24.png"
+                      alt="QR"
+                      className="h-4 w-4 mr-2 opacity-70"
+                    />
+                    My QR Code
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -522,6 +538,7 @@ export default function ProfilePage() {
           )}
         </Card>
       ) : null}
+      <QRCodeModal open={showQRModal} onClose={() => setShowQRModal(false)} />
     </div>
   );
 }
