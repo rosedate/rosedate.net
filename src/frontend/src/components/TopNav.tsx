@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "@tanstack/react-router";
-import { BarChart2, Search } from "lucide-react";
+import { BarChart2, Moon, Search, Sun } from "lucide-react";
+import { useTheme } from "next-themes";
 import { useState } from "react";
 import { useGetUnreadNotificationCount } from "../hooks/useQueries";
 import NotificationPanel from "./NotificationPanel";
@@ -9,6 +10,7 @@ export default function TopNav() {
   const navigate = useNavigate();
   const [showNotifications, setShowNotifications] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const { theme, setTheme } = useTheme();
   const { data: unreadCount = 0n } = useGetUnreadNotificationCount();
 
   const handleSearch = (e: React.FormEvent) => {
@@ -53,6 +55,25 @@ export default function TopNav() {
 
           {/* Right Side Icons */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Dark Mode Toggle */}
+            <button
+              type="button"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="h-8 w-8 sm:h-10 sm:w-10 flex items-center justify-center rounded-full hover:bg-primary/10 transition-all hover:shadow-rose-glow-sm"
+              title={
+                theme === "dark"
+                  ? "Switch to light mode"
+                  : "Switch to dark mode"
+              }
+              data-ocid="nav-dark-mode-toggle"
+            >
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4 sm:h-5 sm:w-5 text-foreground/70" />
+              ) : (
+                <Moon className="h-4 w-4 sm:h-5 sm:w-5 text-foreground/70" />
+              )}
+            </button>
+
             {/* Analytics Button */}
             <button
               onClick={() => navigate({ to: "/analytics" })}

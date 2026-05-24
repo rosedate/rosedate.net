@@ -612,10 +612,13 @@ export default function ConversationPage() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
+  const [isSending, setIsSending] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSendingRef = useRef(false);
 
   // Try to parse conversationId as Principal for new chat flow
   let targetPrincipal: Principal | null = null;
@@ -821,6 +824,9 @@ export default function ConversationPage() {
   const handleSendTextMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!messageText.trim() || !otherParticipant) return;
+    if (isSendingRef.current) return;
+    isSendingRef.current = true;
+    setIsSending(true);
     const content: MessageType = { __kind__: "text", text: messageText.trim() };
     try {
       stopTyping();
@@ -833,6 +839,9 @@ export default function ConversationPage() {
       setReplyTo(null);
     } catch {
       toast.error("Failed to send message");
+    } finally {
+      isSendingRef.current = false;
+      setIsSending(false);
     }
   };
 
@@ -1710,7 +1719,7 @@ export default function ConversationPage() {
               value={messageText}
               onChange={(e) => handleTypingInput(e.target.value)}
               placeholder="Type a message..."
-              disabled={!otherParticipant || sendMessage.isPending}
+              disabled={!otherParticipant || sendMessage.isPending || isSending}
               className="flex-1 text-base"
               data-ocid="msg-input"
             />
@@ -1720,7 +1729,8 @@ export default function ConversationPage() {
               disabled={
                 !messageText.trim() ||
                 !otherParticipant ||
-                sendMessage.isPending
+                sendMessage.isPending ||
+                isSending
               }
               className="shrink-0"
               data-ocid="msg-send-btn"

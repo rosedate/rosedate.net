@@ -1028,8 +1028,14 @@ export default function GroupChatPage() {
         )
       : allMessages;
 
+  const [isSending, setIsSending] = useState(false);
+  const isSendingRef = useRef(false);
+
   const handleSendText = async () => {
     if (!messageText.trim()) return;
+    if (isSendingRef.current) return;
+    isSendingRef.current = true;
+    setIsSending(true);
     try {
       stopTyping();
       await sendMessageMutation.mutateAsync({
@@ -1041,6 +1047,9 @@ export default function GroupChatPage() {
       setReplyTo(null);
     } catch (err: unknown) {
       toast.error((err as Error).message || "Failed to send message");
+    } finally {
+      isSendingRef.current = false;
+      setIsSending(false);
     }
   };
 
@@ -1783,7 +1792,9 @@ export default function GroupChatPage() {
           />
           <button
             onClick={handleSendText}
-            disabled={!messageText.trim() || sendMessageMutation.isPending}
+            disabled={
+              !messageText.trim() || sendMessageMutation.isPending || isSending
+            }
             className="p-2 rounded-full bg-primary text-primary-foreground disabled:opacity-50 transition-opacity"
             data-ocid="group-msg-send-btn"
           >
