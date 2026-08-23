@@ -1,26 +1,15 @@
 {
-  "overview": "Rose Dating is a romantic social dating app on the Internet Computer. It features user profiles, stories, posts, direct and group chats, a tokenized Rose Credits economy, and rich social interactions including reactions, gifting, and media sharing.",
+  "overview": "Rose Dating is a dating app with a Fair Spin (Turn the Clock) game where users can deposit into a game pool and a shared LP pool, spin the wheel, and share results.",
   "features": [
-    "Story reactions with emoji",
-    "Story captions as text overlays",
-    "Rose gifting on stories",
-    "Rose gifting on posts (feed and profile)",
-    "Real-time chat with reactions",
-    "Rose Credits economy (1 Rose = 1 ICP)",
-    "QR code chat sharing",
-    "PWA support",
-    "Email notifications"
+    "Play the Fair Spin wheel game",
+    "Deposit and withdraw from the game pool and shared LP pool",
+    "Share fair spin results on X"
   ],
-  "category": "social",
+  "category": "dating",
   "tags": [
     "dating",
-    "social",
-    "stories",
-    "chat",
-    "crypto",
-    "rose-credits",
-    "icp",
-    "pwa"
+    "game",
+    "social"
   ],
-  "last_updated": "2026-04-21T00:41:54.443Z"
+  "last_updated": "2026-08-21T11:34:58.438Z"
 }

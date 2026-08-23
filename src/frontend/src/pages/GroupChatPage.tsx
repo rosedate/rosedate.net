@@ -38,8 +38,8 @@ import {
   Video,
   X,
 } from "lucide-react";
-import type React from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { type Conversation, ExternalBlob, type GroupMessage } from "../backend";
 import ExpiredMediaPlaceholder from "../components/ExpiredMediaPlaceholder";
@@ -143,14 +143,29 @@ function EmojiReactionPicker({
   onSelect,
   onClose,
   isOwn,
+  messageText,
 }: {
   onSelect: (emoji: string) => void;
   onClose: () => void;
   isOwn: boolean;
+  messageText?: string;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (!messageText) return;
+    navigator.clipboard.writeText(messageText).then(() => {
+      setCopied(true);
+      setTimeout(() => {
+        setCopied(false);
+        onClose();
+      }, 1500);
+    });
+  };
+
   return (
     <div
-      className={`absolute bottom-full mb-1 z-50 flex gap-1 bg-card border border-rose-100 rounded-full shadow-lg px-2 py-1 ${isOwn ? "right-0" : "left-0"}`}
+      className={`absolute bottom-full mb-1 z-50 flex items-center gap-1 bg-card border border-rose-100 rounded-full shadow-lg px-2 py-1 ${isOwn ? "right-0" : "left-0"}`}
       onClick={(e) => e.stopPropagation()}
     >
       {EMOJI_OPTIONS.map((emoji) => (
@@ -167,28 +182,54 @@ function EmojiReactionPicker({
           {emoji}
         </button>
       ))}
+      {messageText && (
+        <>
+          <div className="w-px h-5 bg-rose-100 mx-0.5" />
+          <button
+            type="button"
+            onClick={handleCopy}
+            className={`text-xs font-medium px-2 py-0.5 rounded-full transition-colors ${
+              copied
+                ? "bg-rose-500 text-white"
+                : "bg-rose-50 text-rose-600 hover:bg-rose-100"
+            }`}
+            aria-label="Copy message"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        </>
+      )}
     </div>
   );
 }
 
 // Reaction badges below a message
-function ReactionBadges({ reactions }: { reactions: [string, string[]][] }) {
-  if (!reactions || reactions.length === 0) return null;
+// Defensive: a non-array (e.g. a Map/object from a shape mismatch) must never
+// reach .map() — that would throw and could surface the raw object's toString
+// in the DOM. Coerce to an empty array so unexpected shapes render nothing.
+function ReactionBadges({
+  reactions,
+}: {
+  reactions: [string, string[]][] | unknown;
+}) {
+  if (!Array.isArray(reactions) || reactions.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1 mt-1">
-      {reactions.map(([emoji, principals]) => (
-        <span
-          key={emoji}
-          className="inline-flex items-center gap-0.5 bg-rose-50 border border-rose-100 rounded-full px-1.5 py-0.5 text-xs"
-        >
-          {emoji}
-          {principals.length > 1 && (
-            <span className="text-rose-600 font-medium">
-              {principals.length}
-            </span>
-          )}
-        </span>
-      ))}
+      {reactions.map(([emoji, principals]) => {
+        // principals must also be an array; guard against nested shape mismatch
+        const count = Array.isArray(principals) ? principals.length : 0;
+        return (
+          <span
+            key={emoji}
+            className="inline-flex items-center gap-0.5 bg-rose-50 border border-rose-100 rounded-full px-1.5 py-0.5 text-xs"
+          >
+            {emoji}
+            {count > 1 && (
+              <span className="text-rose-600 font-medium">{count}</span>
+            )}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -203,106 +244,457 @@ function ReplyQuoteBlock({ text }: { text: string }) {
 }
 
 // Enhanced video player for group messages
-function GroupVideoPlayer({ blob }: { blob: ExternalBlob }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [hasInteracted, setHasInteracted] = useState(false);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
+// Enhanced video player for group messages — uses React-managed <source> to avoid
+// imperative DOM manipulation that reinitializes the video on every parent re-render.
+const GroupVideoPlayer = React.memo(
+  function GroupVideoPlayer({ blob }: { blob: ExternalBlob }) {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [hasInteracted, setHasInteracted] = useState(false);
     const src = blob.getDirectURL();
-    while (video.firstChild) video.removeChild(video.firstChild);
-    const source = document.createElement("source");
-    source.src = src;
-    source.type = getMimeType(src);
-    video.appendChild(source);
-    video.load();
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
-    const handleError = () =>
-      toast.error("This video format may not be supported on your device.");
-    video.addEventListener("play", handlePlay);
-    video.addEventListener("pause", handlePause);
-    video.addEventListener("error", handleError);
-    return () => {
-      video.removeEventListener("play", handlePlay);
-      video.removeEventListener("pause", handlePause);
-      video.removeEventListener("error", handleError);
-    };
-  }, [blob]);
+    const mimeType = getMimeType(src);
 
-  const handleVideoClick = async () => {
-    const video = videoRef.current;
-    if (!video) return;
-    setHasInteracted(true);
-    if (video.paused) {
-      try {
-        await video.play();
-      } catch {
-        toast.error("Failed to play video.");
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video) return;
+      video.load();
+      const handlePlay = () => setIsPlaying(true);
+      const handlePause = () => setIsPlaying(false);
+      const handleError = () =>
+        toast.error("This video format may not be supported on your device.");
+      video.addEventListener("play", handlePlay);
+      video.addEventListener("pause", handlePause);
+      video.addEventListener("error", handleError);
+      return () => {
+        video.removeEventListener("play", handlePlay);
+        video.removeEventListener("pause", handlePause);
+        video.removeEventListener("error", handleError);
+      };
+    }, []);
+
+    const handleVideoClick = async () => {
+      const video = videoRef.current;
+      if (!video) return;
+      setHasInteracted(true);
+      if (video.paused) {
+        try {
+          await video.play();
+        } catch {
+          toast.error("Failed to play video.");
+        }
+      } else {
+        video.pause();
       }
-    } else {
-      video.pause();
-    }
-  };
+    };
 
-  return (
-    <div className="relative max-w-full">
-      <video
-        ref={videoRef}
-        controls
-        playsInline
-        preload="metadata"
-        className="max-w-[200px] max-h-[200px] rounded-lg object-cover cursor-pointer"
-        onClick={handleVideoClick}
-      />
-      {!hasInteracted && !isPlaying && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="bg-black/50 rounded-full p-2">
-            <svg
-              className="w-6 h-6 text-white"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path d="M8 5v14l11-7z" />
-            </svg>
+    return (
+      <div className="relative max-w-full">
+        <video
+          ref={videoRef}
+          controls
+          playsInline
+          preload="metadata"
+          className="max-w-[200px] max-h-[200px] rounded-lg object-cover cursor-pointer"
+          onClick={handleVideoClick}
+        >
+          <source src={src} type={mimeType} />
+        </video>
+        {!hasInteracted && !isPlaying && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="bg-black/50 rounded-full p-2">
+              <svg
+                className="w-6 h-6 text-white"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
+        )}
+      </div>
+    );
+  },
+  (prev, next) => prev.blob.getDirectURL() === next.blob.getDirectURL(),
+);
 
 // Enhanced audio player for group messages
-function GroupAudioPlayer({ blob }: { blob: ExternalBlob }) {
-  const audioRef = useRef<HTMLAudioElement>(null);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+// Enhanced audio player for group messages — uses React-managed <source> to avoid
+// imperative DOM manipulation that reinitializes the audio on every parent re-render.
+const GroupAudioPlayer = React.memo(
+  function GroupAudioPlayer({ blob }: { blob: ExternalBlob }) {
+    const audioRef = useRef<HTMLAudioElement>(null);
     const src = blob.getDirectURL();
-    while (audio.firstChild) audio.removeChild(audio.firstChild);
-    const source = document.createElement("source");
-    source.src = src;
-    source.type = getMimeType(src);
-    audio.appendChild(source);
-    audio.load();
-    const handleError = () =>
-      toast.error("This audio format may not be supported on your device.");
-    audio.addEventListener("error", handleError);
-    return () => audio.removeEventListener("error", handleError);
-  }, [blob]);
+    const mimeType = getMimeType(src);
 
-  return (
-    <audio
-      ref={audioRef}
-      controls
-      className="max-w-[200px]"
-      preload="metadata"
-    />
-  );
+    useEffect(() => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio.load();
+      const handleError = () =>
+        toast.error("This audio format may not be supported on your device.");
+      audio.addEventListener("error", handleError);
+      return () => audio.removeEventListener("error", handleError);
+    }, []);
+
+    return (
+      <audio
+        ref={audioRef}
+        controls
+        className="max-w-[200px]"
+        preload="metadata"
+      >
+        <source src={src} type={mimeType} />
+      </audio>
+    );
+  },
+  (prev, next) => prev.blob.getDirectURL() === next.blob.getDirectURL(),
+);
+
+// Props for the memoized message item
+interface GroupMessageItemProps {
+  msg: ExtendedGroupMessage;
+  currentPrincipal: string;
+  editingMessageId: bigint | null;
+  editText: string;
+  emojiPickerForId: bigint | null;
+  pinnedMessageId: bigint | null;
+  isAdminOrCreator: boolean;
+  showSearch: boolean;
+  searchTerm: string;
+  onSetEditingMessageId: (id: bigint | null) => void;
+  onSetEditText: (text: string) => void;
+  onSetEmojiPickerForId: (id: bigint | null) => void;
+  onSetForwardingMessage: (msg: ExtendedGroupMessage | null) => void;
+  onSetReplyTo: (r: { id: bigint; snippet: string } | null) => void;
+  onEditMessage: (msg: ExtendedGroupMessage) => void;
+  onDeleteMessage: (msg: ExtendedGroupMessage) => void;
+  onReactToMessage: (msg: ExtendedGroupMessage, emoji: string) => void;
+  onPinMessage: (msg: ExtendedGroupMessage) => void;
+  onUnpinMessage: () => void;
+  getReplySnippet: (replyToId: bigint | null | undefined) => string;
+  getMessageSnippet: (msg: ExtendedGroupMessage) => string;
 }
+
+// Memoized message item — only re-renders when its own content changes,
+// not on every poll-driven parent array reference change.
+const GroupMessageItem = memo(
+  function GroupMessageItem({
+    msg,
+    currentPrincipal,
+    editingMessageId,
+    editText,
+    emojiPickerForId,
+    pinnedMessageId,
+    isAdminOrCreator,
+    showSearch,
+    searchTerm,
+    onSetEditingMessageId,
+    onSetEditText,
+    onSetEmojiPickerForId,
+    onSetForwardingMessage,
+    onSetReplyTo,
+    onEditMessage,
+    onDeleteMessage,
+    onReactToMessage,
+    onPinMessage,
+    onUnpinMessage,
+    getReplySnippet,
+    getMessageSnippet,
+  }: GroupMessageItemProps) {
+    const isOwn = msg.sender.toString() === currentPrincipal;
+    const isEditing = editingMessageId === msg.id;
+    // Defensive: msg.reactions may arrive as a Map/object on a shape mismatch.
+    // `?? []` does NOT coerce a Map to an array, so an explicit Array.isArray
+    // check is required — otherwise a Map would flow through to ReactionBadges
+    // and could render its raw toString ('1376': 151, ...) into the DOM.
+    const rawReactions = msg.reactions;
+    const reactions: [string, string[]][] = Array.isArray(rawReactions)
+      ? rawReactions
+      : [];
+    const replyToId = msg.replyToId ?? null;
+    const showEmojiPicker = emojiPickerForId === msg.id;
+    const isTextMsg = msg.content.__kind__ === "text";
+    const isThisPinned = pinnedMessageId === msg.id;
+
+    const renderContent = () => {
+      const { content, timestamp } = msg;
+      if (isTextMsg && content.__kind__ === "text") {
+        if (containsProfileLink(content.text)) {
+          return (
+            <>
+              <ProfileLinkMessageText
+                text={content.text}
+                className="text-sm whitespace-pre-wrap break-words"
+              />
+              {content.text?.includes("/pay/") && (
+                <PaymentLinkMessageText text={content.text} />
+              )}
+            </>
+          );
+        }
+        if (content.text?.includes("/pay/")) {
+          return <PaymentLinkMessageText text={content.text} />;
+        }
+        return (
+          <p className="text-sm whitespace-pre-wrap break-words">
+            {showSearch && searchTerm ? (
+              <HighlightText text={content.text} term={searchTerm} />
+            ) : (
+              content.text
+            )}
+          </p>
+        );
+      }
+      if (content.__kind__ === "text")
+        return (
+          <p className="text-sm whitespace-pre-wrap break-words">
+            {containsProfileLink(content.text) ? (
+              <>
+                <ProfileLinkMessageText
+                  text={content.text}
+                  className="text-sm whitespace-pre-wrap break-words"
+                />
+                {content.text?.includes("/pay/") && (
+                  <PaymentLinkMessageText text={content.text} />
+                )}
+              </>
+            ) : content.text?.includes("/pay/") ? (
+              <PaymentLinkMessageText text={content.text} />
+            ) : (
+              content.text
+            )}
+          </p>
+        );
+      if (content.__kind__ === "image") {
+        if (isMediaExpired(timestamp))
+          return (
+            <ExpiredMediaPlaceholder
+              mediaType="image"
+              className="max-w-[200px]"
+            />
+          );
+        return (
+          <img
+            src={content.image.getDirectURL()}
+            alt="Shared media"
+            className="max-w-[200px] max-h-[200px] rounded-lg object-cover"
+          />
+        );
+      }
+      if (content.__kind__ === "video") {
+        if (isMediaExpired(timestamp))
+          return (
+            <ExpiredMediaPlaceholder
+              mediaType="video"
+              className="max-w-[200px]"
+            />
+          );
+        return <GroupVideoPlayer blob={content.video} />;
+      }
+      if (content.__kind__ === "voice") {
+        if (isMediaExpired(timestamp))
+          return (
+            <ExpiredMediaPlaceholder
+              mediaType="voice"
+              className="max-w-[200px]"
+            />
+          );
+        return <GroupAudioPlayer blob={content.voice} />;
+      }
+      if (content.__kind__ === "media") {
+        if (isMediaExpired(timestamp))
+          return (
+            <ExpiredMediaPlaceholder
+              mediaType="media"
+              className="max-w-[200px]"
+            />
+          );
+        return (
+          <img
+            src={content.media.getDirectURL()}
+            alt="Media"
+            className="max-w-[200px] max-h-[200px] rounded-lg object-cover"
+          />
+        );
+      }
+      return (
+        <p className="text-sm text-muted-foreground italic">
+          Unsupported message type
+        </p>
+      );
+    };
+
+    return (
+      <div
+        data-message-id={msg.id.toString()}
+        className={`flex ${isOwn ? "justify-end" : "justify-start"} gap-2 group`}
+      >
+        {!isOwn && (
+          <img
+            src={
+              msg.senderProfile?.profilePicture?.getDirectURL() ||
+              "/assets/generated/avatar-placeholder.dim_200x200.png"
+            }
+            alt={msg.senderProfile?.name || "User"}
+            className="w-7 h-7 rounded-full object-cover flex-shrink-0 self-end"
+          />
+        )}
+        <div
+          className={`max-w-[70%] ${isOwn ? "items-end" : "items-start"} flex flex-col gap-0.5`}
+        >
+          {!isOwn && (
+            <span className="text-xs text-muted-foreground px-1">
+              {msg.senderProfile?.name || "Unknown"}
+            </span>
+          )}
+          <div
+            className={`flex items-center gap-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
+          >
+            {/* Message bubble with single-tap emoji reaction */}
+            <div className="relative">
+              <div
+                className={`px-3 py-2 rounded-2xl cursor-pointer select-none ${
+                  isOwn
+                    ? "bg-primary text-primary-foreground rounded-br-sm"
+                    : "bg-muted text-foreground rounded-bl-sm"
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!msg.isDeleted && !isEditing) {
+                    onSetEmojiPickerForId(
+                      emojiPickerForId === msg.id ? null : msg.id,
+                    );
+                  }
+                }}
+              >
+                {/* Reply quote */}
+                {replyToId && !msg.isDeleted && (
+                  <ReplyQuoteBlock text={getReplySnippet(replyToId)} />
+                )}
+
+                {msg.isDeleted ? (
+                  <p className="text-sm italic text-muted-foreground">
+                    [Message deleted]
+                  </p>
+                ) : isEditing ? (
+                  <div className="flex gap-2 min-w-[180px]">
+                    <input
+                      value={editText}
+                      onChange={(e) => onSetEditText(e.target.value)}
+                      className="flex-1 bg-background/20 border-0 outline-none text-sm text-inherit rounded px-1"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") onEditMessage(msg);
+                        if (e.key === "Escape") {
+                          onSetEditingMessageId(null);
+                          onSetEditText("");
+                        }
+                      }}
+                      data-ocid="group-msg-edit-input"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onEditMessage(msg)}
+                      className="text-green-400 hover:text-green-300"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSetEditingMessageId(null);
+                        onSetEditText("");
+                      }}
+                      className="text-muted-foreground/70 hover:text-muted-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  renderContent()
+                )}
+              </div>
+
+              {/* Emoji picker overlay */}
+              {showEmojiPicker && !msg.isDeleted && (
+                <EmojiReactionPicker
+                  isOwn={isOwn}
+                  onSelect={(emoji) => onReactToMessage(msg, emoji)}
+                  onClose={() => onSetEmojiPickerForId(null)}
+                  messageText={
+                    isTextMsg
+                      ? (msg.content as { __kind__: "text"; text: string }).text
+                      : undefined
+                  }
+                />
+              )}
+            </div>
+
+            {!msg.isDeleted && (
+              <div className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                <GroupMessageActions
+                  message={msg}
+                  isOwn={isOwn}
+                  isAdminUser={isAdminOrCreator}
+                  isPinned={isThisPinned}
+                  onEdit={() => {
+                    onSetEditingMessageId(msg.id);
+                    onSetEditText(
+                      msg.content.__kind__ === "text" ? msg.content.text : "",
+                    );
+                  }}
+                  onDelete={() => onDeleteMessage(msg)}
+                  onForward={() => onSetForwardingMessage(msg)}
+                  onReply={() =>
+                    onSetReplyTo({
+                      id: msg.id,
+                      snippet: getMessageSnippet(msg),
+                    })
+                  }
+                  onPin={() => onPinMessage(msg)}
+                  onUnpin={onUnpinMessage}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Reactions */}
+          {reactions.length > 0 && <ReactionBadges reactions={reactions} />}
+
+          <div
+            className={`flex items-center gap-1.5 px-1 ${
+              isOwn ? "justify-end" : "justify-start"
+            }`}
+          >
+            <span className="text-xs text-muted-foreground">
+              {new Date(Number(msg.timestamp) / 1_000_000).toLocaleTimeString(
+                [],
+                {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                },
+              )}
+            </span>
+            {msg.isEdited && !msg.isDeleted && (
+              <span className="text-xs text-muted-foreground italic">
+                (edited)
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  },
+  (prevProps, nextProps) =>
+    prevProps.msg.id === nextProps.msg.id &&
+    prevProps.msg.content === nextProps.msg.content &&
+    prevProps.msg.isEdited === nextProps.msg.isEdited &&
+    prevProps.msg.isDeleted === nextProps.msg.isDeleted &&
+    JSON.stringify(prevProps.msg.reactions) ===
+      JSON.stringify(nextProps.msg.reactions) &&
+    prevProps.editingMessageId === nextProps.editingMessageId &&
+    prevProps.emojiPickerForId === nextProps.emojiPickerForId,
+);
 
 // Forward target type
 type ForwardTarget = {
@@ -437,6 +829,16 @@ function GroupMessageActions({
 }) {
   const isText = message.content.__kind__ === "text";
   const isDeleted = message.isDeleted;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (!isText || isDeleted) return;
+    const text = (message.content as { __kind__: "text"; text: string }).text;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
 
   return (
     <DropdownMenu>
@@ -467,6 +869,17 @@ function GroupMessageActions({
           >
             <ForwardIcon className="h-3.5 w-3.5 text-rose-500" />
             Forward
+          </DropdownMenuItem>
+        )}
+        {isText && !isDeleted && (
+          <DropdownMenuItem
+            onClick={handleCopy}
+            className="gap-2 cursor-pointer"
+          >
+            <span className="h-3.5 w-3.5 text-rose-500 flex items-center justify-center text-xs">
+              {copied ? "✓" : "⎘"}
+            </span>
+            {copied ? "Copied!" : "Copy"}
           </DropdownMenuItem>
         )}
         {!isDeleted &&
@@ -596,20 +1009,9 @@ function AddMemberPicker({
   onAdd: (principalStr: string) => void;
   isPending: boolean;
 }) {
-  const [search, setSearch] = useState("");
   const [selectedPrincipal, setSelectedPrincipal] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return contacts;
-    const q = search.toLowerCase();
-    return contacts.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.username.toLowerCase().includes(q),
-    );
-  }, [contacts, search]);
 
   const selectedContact = contacts.find(
     (c) => c.principalStr === selectedPrincipal,
@@ -630,13 +1032,11 @@ function AddMemberPicker({
   const handleSelect = (principalStr: string) => {
     setSelectedPrincipal(principalStr);
     setDropdownOpen(false);
-    setSearch("");
   };
   const handleAdd = () => {
     if (!selectedPrincipal) return;
     onAdd(selectedPrincipal);
     setSelectedPrincipal("");
-    setSearch("");
   };
 
   return (
@@ -676,38 +1076,13 @@ function AddMemberPicker({
         </button>
         {dropdownOpen && (
           <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-background border border-border rounded-lg shadow-lg overflow-hidden">
-            <div className="p-2 border-b border-border">
-              <div className="flex items-center gap-2 px-2 py-1.5 bg-muted rounded-md">
-                <Search
-                  size={13}
-                  className="text-muted-foreground flex-shrink-0"
-                />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by name or username..."
-                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                />
-                {search && (
-                  <button
-                    onClick={() => setSearch("")}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-            </div>
             <div className="max-h-48 overflow-y-auto">
-              {filtered.length === 0 ? (
+              {contacts.length === 0 ? (
                 <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-                  {contacts.length === 0
-                    ? "No contacts available to add"
-                    : "No contacts match your search"}
+                  No contacts available to add
                 </div>
               ) : (
-                filtered.map((contact) => (
+                contacts.map((contact) => (
                   <button
                     key={contact.principalStr}
                     type="button"
@@ -824,6 +1199,10 @@ export default function GroupChatPage() {
   const [searchTerm, setSearchTerm] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUpRef = useRef(false);
+  const userSentMessageRef = useRef(false);
+  const scrollScheduledRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoFileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -844,9 +1223,34 @@ export default function GroupChatPage() {
     })
     .filter(Boolean);
 
+  // Track user scroll position to avoid hijacking scroll when reading history
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      isUserScrolledUpRef.current = distanceFromBottom > 200;
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Smart scroll-to-bottom: only auto-scroll when user sent a message or is already near the bottom
   // biome-ignore lint/correctness/useExhaustiveDependencies: messages is the correct dep for scroll-to-bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!isUserScrolledUpRef.current || userSentMessageRef.current) {
+      // BUG-G8: guard against multiple rapid scroll calls from duplicate message arrivals
+      if (scrollScheduledRef.current) return;
+      scrollScheduledRef.current = true;
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView?.({ behavior: "smooth" });
+        scrollScheduledRef.current = false;
+        if (userSentMessageRef.current) {
+          userSentMessageRef.current = false;
+        }
+      }, 50);
+    }
   }, [messages]);
 
   // Mark entire group as read on mount and when messages change
@@ -1001,21 +1405,24 @@ export default function GroupChatPage() {
     return contacts;
   }, [conversations, allParticipants, currentPrincipal]);
 
-  const getMessageSnippet = (msg: ExtendedGroupMessage): string => {
+  const getMessageSnippet = useCallback((msg: ExtendedGroupMessage): string => {
     if (msg.content.__kind__ === "text") return msg.content.text.slice(0, 50);
     if (msg.content.__kind__ === "image") return "📷 Image";
     if (msg.content.__kind__ === "video") return "🎥 Video";
     if (msg.content.__kind__ === "voice") return "🎤 Voice message";
     return "Message";
-  };
+  }, []);
 
-  const getReplySnippet = (replyToId: bigint | null | undefined): string => {
-    if (!replyToId) return "Original message";
-    const orig = (messages as ExtendedGroupMessage[]).find(
-      (m) => m.id === replyToId,
-    );
-    return orig ? getMessageSnippet(orig) : "Original message";
-  };
+  const getReplySnippet = useCallback(
+    (replyToId: bigint | null | undefined): string => {
+      if (!replyToId) return "Original message";
+      const orig = (messages as ExtendedGroupMessage[]).find(
+        (m) => m.id === replyToId,
+      );
+      return orig ? getMessageSnippet(orig) : "Original message";
+    },
+    [messages, getMessageSnippet],
+  );
 
   // Filtered messages for search mode
   const allMessages = messages as ExtendedGroupMessage[];
@@ -1029,24 +1436,81 @@ export default function GroupChatPage() {
       : allMessages;
 
   const [isSending, setIsSending] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const isSendingRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Deduplication: map of "text|windowStart" → true to prevent duplicate sends within 10s (matches backend)
+  const recentSendsRef = useRef<Map<string, number>>(new Map());
+  // Deduplication for media sends: map of dedupId → timestamp
+  const recentMediaSendsRef = useRef<Map<string, number>>(new Map());
+
+  // BUG-G14: clear dedup maps when switching groups
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only groupId
+  useEffect(() => {
+    recentSendsRef.current = new Map();
+    recentMediaSendsRef.current = new Map();
+  }, [groupId]);
 
   const handleSendText = async () => {
-    if (!messageText.trim()) return;
+    // ATOMIC LOCK: must be the VERY FIRST LINES before reading input, before any async
     if (isSendingRef.current) return;
     isSendingRef.current = true;
+
+    // Save and clear input IMMEDIATELY before any await
+    const trimmed = messageText.trim();
+    setMessageText("");
+    if (inputRef.current) inputRef.current.value = "";
+
+    if (!trimmed) {
+      isSendingRef.current = false;
+      return;
+    }
+
+    // Generate a unique dedup nonce ONCE at initiation — never regenerated for this action
+    const dedupId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+    // Client-side deduplication: reject same text within 10 seconds (matches backend)
+    const now = Date.now();
+    const dedupKey = trimmed;
+    const lastSent = recentSendsRef.current.get(dedupKey);
+    if (lastSent && now - lastSent < 10000) {
+      isSendingRef.current = false;
+      return;
+    }
+    recentSendsRef.current.set(dedupKey, now);
+    // Clean up old entries
+    for (const [k, t] of recentSendsRef.current.entries()) {
+      if (now - t > 10000) recentSendsRef.current.delete(k);
+    }
+
     setIsSending(true);
+    // Signal smart scroll to follow this outgoing message
+    userSentMessageRef.current = true;
+
     try {
       stopTyping();
-      await sendMessageMutation.mutateAsync({
+      const result = await sendMessageMutation.mutateAsync({
         groupId: groupIdBigInt,
-        content: { __kind__: "text", text: messageText.trim() },
+        content: { __kind__: "text", text: trimmed },
         replyToId: replyTo?.id,
+        dedupId,
       });
-      setMessageText("");
+      // BUG-G15: handle Result type — err means duplicate or invalid
+      if (result.__kind__ === "err") {
+        isSendingRef.current = false;
+        setIsSending(false);
+        return;
+      }
       setReplyTo(null);
     } catch (err: unknown) {
-      toast.error((err as Error).message || "Failed to send message");
+      const msg = (err as Error).message || "";
+      // Silently swallow duplicate-blocked errors; surface all real errors
+      if (!msg.includes("Duplicate send blocked")) {
+        toast.error(msg || "Failed to send message");
+        // Restore text on failure so the user can retry
+        setMessageText(trimmed);
+        recentSendsRef.current.delete(dedupKey);
+      }
     } finally {
       isSendingRef.current = false;
       setIsSending(false);
@@ -1054,44 +1518,149 @@ export default function GroupChatPage() {
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const blob = ExternalBlob.fromBytes(
-        new Uint8Array(await file.arrayBuffer()),
-      );
-      await sendMessageMutation.mutateAsync({
-        groupId: groupIdBigInt,
-        content: { __kind__: "image", image: blob },
-      });
-    } catch (err: unknown) {
-      toast.error((err as Error).message || "Failed to send image");
-    }
-    e.target.value = "";
-  };
-
-  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("video/")) {
-      toast.error("Please select a video file");
+    // ATOMIC LOCK: must be the VERY FIRST LINES before reading file, before any async
+    if (isSendingRef.current) {
       e.target.value = "";
       return;
     }
-    setVideoSending(true);
+    isSendingRef.current = true;
+    setIsSending(true);
+
+    const file = e.target.files?.[0];
+    if (!file) {
+      isSendingRef.current = false;
+      setIsSending(false);
+      return;
+    }
+
+    // Deterministic dedupId from file identity + 10-second time window (matches backend).
+    // Send THIS to the backend so all three triggers for the same media item share one dedupId.
+    const dedupId = `img|${file.name}|${file.size}|${Math.floor(Date.now() / 10000)}`;
+    // Write to the local dedup map IMMEDIATELY (before any await/upload) so concurrent
+    // triggers in the same tick see the entry and are rejected by the local dedup.
+    const now = Date.now();
+    if (recentMediaSendsRef.current.get(dedupId) !== undefined) {
+      isSendingRef.current = false;
+      setIsSending(false);
+      e.target.value = "";
+      return;
+    }
+    recentMediaSendsRef.current.set(dedupId, now);
+    // Clear stale entries
+    for (const [k, t] of recentMediaSendsRef.current.entries()) {
+      if (now - t > 10000) recentMediaSendsRef.current.delete(k);
+    }
+
+    // Clear input BEFORE await so rapid re-clicks see an empty input
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    userSentMessageRef.current = true;
+
     try {
-      const blob = ExternalBlob.fromBytes(
-        new Uint8Array(await file.arrayBuffer()),
-      );
-      await sendMessageMutation.mutateAsync({
+      setUploadProgress(10);
+      const rawBytes = new Uint8Array(await file.arrayBuffer());
+      setUploadProgress(50);
+      const blob = ExternalBlob.fromBytes(rawBytes);
+      setUploadProgress(80);
+      const result = await sendMessageMutation.mutateAsync({
+        groupId: groupIdBigInt,
+        content: { __kind__: "image", image: blob },
+        dedupId,
+      });
+      setUploadProgress(100);
+      // BUG-G15: handle Result type — err means duplicate or invalid
+      if (result.__kind__ === "err") {
+        isSendingRef.current = false;
+        setIsSending(false);
+        return;
+      }
+    } catch (err: unknown) {
+      toast.error((err as Error).message || "Failed to send image");
+      recentMediaSendsRef.current.delete(dedupId);
+    } finally {
+      isSendingRef.current = false;
+      setIsSending(false);
+      setUploadProgress(0);
+      e.target.value = "";
+    }
+  };
+
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // ATOMIC LOCK: must be the VERY FIRST LINES before reading file, before any async
+    if (isSendingRef.current) {
+      e.target.value = "";
+      return;
+    }
+    isSendingRef.current = true;
+    setIsSending(true);
+    setVideoSending(true);
+
+    const file = e.target.files?.[0];
+    if (!file) {
+      isSendingRef.current = false;
+      setIsSending(false);
+      setVideoSending(false);
+      return;
+    }
+    if (!file.type.startsWith("video/")) {
+      toast.error("Please select a video file");
+      isSendingRef.current = false;
+      setIsSending(false);
+      setVideoSending(false);
+      e.target.value = "";
+      return;
+    }
+
+    // Deterministic dedupId from file identity + 10-second time window (matches backend).
+    // Send THIS to the backend so all three triggers for the same media item share one dedupId.
+    const dedupId = `vid|${file.name}|${file.size}|${Math.floor(Date.now() / 10000)}`;
+    // Write to the local dedup map IMMEDIATELY (before any await/upload) so concurrent
+    // triggers in the same tick see the entry and are rejected by the local dedup.
+    const now = Date.now();
+    if (recentMediaSendsRef.current.get(dedupId) !== undefined) {
+      isSendingRef.current = false;
+      setIsSending(false);
+      setVideoSending(false);
+      e.target.value = "";
+      return;
+    }
+    recentMediaSendsRef.current.set(dedupId, now);
+    // Clear stale entries
+    for (const [k, t] of recentMediaSendsRef.current.entries()) {
+      if (now - t > 10000) recentMediaSendsRef.current.delete(k);
+    }
+
+    // Clear input BEFORE await so rapid re-clicks see an empty input
+    if (videoFileInputRef.current) videoFileInputRef.current.value = "";
+    userSentMessageRef.current = true;
+
+    try {
+      setUploadProgress(10);
+      const rawBytes = new Uint8Array(await file.arrayBuffer());
+      setUploadProgress(50);
+      const blob = ExternalBlob.fromBytes(rawBytes);
+      setUploadProgress(80);
+      const result = await sendMessageMutation.mutateAsync({
         groupId: groupIdBigInt,
         content: { __kind__: "video", video: blob },
+        dedupId,
       });
+      setUploadProgress(100);
+      // BUG-G15: handle Result type — err means duplicate or invalid
+      if (result.__kind__ === "err") {
+        isSendingRef.current = false;
+        setIsSending(false);
+        setVideoSending(false);
+        return;
+      }
       toast.success("Video sent!");
     } catch (err: unknown) {
       toast.error((err as Error).message || "Failed to send video");
+      recentMediaSendsRef.current.delete(dedupId);
     } finally {
+      isSendingRef.current = false;
+      setIsSending(false);
       setVideoSending(false);
+      setUploadProgress(0);
       e.target.value = "";
     }
   };
@@ -1167,225 +1736,195 @@ export default function GroupChatPage() {
   };
 
   const handleVoiceRecorded = async (blob: Blob) => {
+    // ATOMIC LOCK: must be the VERY FIRST LINES before reading blob, before any async
+    if (isSendingRef.current) return;
+    isSendingRef.current = true;
+    setIsSending(true);
+
+    // Deterministic dedupId from blob size + 10-second time window (matches backend).
+    // Send THIS to the backend so all three triggers for the same media item share one dedupId.
+    const dedupId = `voice|${blob.size}|${Math.floor(Date.now() / 10000)}`;
+    // Write to the local dedup map IMMEDIATELY (before any await/upload) so concurrent
+    // triggers in the same tick see the entry and are rejected by the local dedup.
+    const now = Date.now();
+    if (recentMediaSendsRef.current.get(dedupId) !== undefined) {
+      isSendingRef.current = false;
+      setIsSending(false);
+      return;
+    }
+    recentMediaSendsRef.current.set(dedupId, now);
+    // Clear stale entries
+    for (const [k, t] of recentMediaSendsRef.current.entries()) {
+      if (now - t > 10000) recentMediaSendsRef.current.delete(k);
+    }
+
+    userSentMessageRef.current = true;
     try {
-      const extBlob = ExternalBlob.fromBytes(
-        new Uint8Array(await blob.arrayBuffer()),
-      );
-      await sendMessageMutation.mutateAsync({
+      setUploadProgress(10);
+      const rawBytes = new Uint8Array(await blob.arrayBuffer());
+      setUploadProgress(50);
+      const extBlob = ExternalBlob.fromBytes(rawBytes);
+      setUploadProgress(80);
+      const result = await sendMessageMutation.mutateAsync({
         groupId: groupIdBigInt,
         content: { __kind__: "voice", voice: extBlob },
+        dedupId,
       });
+      setUploadProgress(100);
+      // BUG-G15: handle Result type — err means duplicate or invalid
+      if (result.__kind__ === "err") {
+        isSendingRef.current = false;
+        setIsSending(false);
+        return;
+      }
       setShowVoiceRecorder(false);
     } catch (err: unknown) {
       toast.error((err as Error).message || "Failed to send voice message");
+      recentMediaSendsRef.current.delete(dedupId);
+    } finally {
+      isSendingRef.current = false;
+      setIsSending(false);
+      setUploadProgress(0);
     }
   };
 
   const handleVideoRecorded = async (blob: Blob) => {
+    // ATOMIC LOCK: must be the VERY FIRST LINES before reading blob, before any async
+    if (isSendingRef.current) return;
+    isSendingRef.current = true;
+    setIsSending(true);
+
+    // Deterministic dedupId from blob size + 3-second time window.
+    // Send THIS to the backend so all three triggers for the same media item share one dedupId.
+    const dedupId = `vidrec|${blob.size}|${Math.floor(Date.now() / 3000)}`;
+    // Write to the local dedup map IMMEDIATELY (before any await/upload) so concurrent
+    // triggers in the same tick see the entry and are rejected by the local dedup.
+    const now = Date.now();
+    if (recentMediaSendsRef.current.get(dedupId) !== undefined) {
+      isSendingRef.current = false;
+      setIsSending(false);
+      return;
+    }
+    recentMediaSendsRef.current.set(dedupId, now);
+    // Clear stale entries
+    for (const [k, t] of recentMediaSendsRef.current.entries()) {
+      if (now - t > 10000) recentMediaSendsRef.current.delete(k);
+    }
+
+    userSentMessageRef.current = true;
     try {
       const extBlob = ExternalBlob.fromBytes(
         new Uint8Array(await blob.arrayBuffer()),
       );
-      await sendMessageMutation.mutateAsync({
+      const result = await sendMessageMutation.mutateAsync({
         groupId: groupIdBigInt,
         content: { __kind__: "video", video: extBlob },
+        dedupId,
       });
+      // BUG-G15: handle Result type — err means duplicate or invalid
+      if (result.__kind__ === "err") {
+        isSendingRef.current = false;
+        setIsSending(false);
+        return;
+      }
       setShowVideoRecorder(false);
     } catch (err: unknown) {
       toast.error((err as Error).message || "Failed to send video message");
+      recentMediaSendsRef.current.delete(dedupId);
+    } finally {
+      isSendingRef.current = false;
+      setIsSending(false);
     }
   };
 
-  const handleEditGroupMessage = async (msg: ExtendedGroupMessage) => {
-    if (!editText.trim()) return;
-    try {
-      await editGroupMessage.mutateAsync({
-        groupId: groupIdBigInt,
-        messageId: msg.id,
-        newText: editText.trim(),
-      });
-      setEditingMessageId(null);
-      setEditText("");
-      toast.success("Message edited");
-    } catch {
-      toast.error("Failed to edit message");
-    }
-  };
+  const handleEditGroupMessage = useCallback(
+    async (msg: ExtendedGroupMessage) => {
+      if (!editText.trim()) return;
+      try {
+        await editGroupMessage.mutateAsync({
+          groupId: groupIdBigInt,
+          messageId: msg.id,
+          newText: editText.trim(),
+        });
+        setEditingMessageId(null);
+        setEditText("");
+        toast.success("Message edited");
+      } catch {
+        toast.error("Failed to edit message");
+      }
+    },
+    [editGroupMessage, groupIdBigInt, editText],
+  );
 
-  const handleDeleteGroupMessage = async (msg: ExtendedGroupMessage) => {
-    try {
-      await deleteGroupMessage.mutateAsync({
-        groupId: groupIdBigInt,
-        messageId: msg.id,
-      });
-      toast.success("Message deleted");
-    } catch {
-      toast.error("Failed to delete message");
-    }
-  };
+  const handleDeleteGroupMessage = useCallback(
+    async (msg: ExtendedGroupMessage) => {
+      try {
+        await deleteGroupMessage.mutateAsync({
+          groupId: groupIdBigInt,
+          messageId: msg.id,
+        });
+        toast.success("Message deleted");
+      } catch {
+        toast.error("Failed to delete message");
+      }
+    },
+    [deleteGroupMessage, groupIdBigInt],
+  );
 
-  const handleForwardGroupMessage = async (
-    msg: ExtendedGroupMessage,
-    target: ForwardTarget,
-  ) => {
-    try {
-      await forwardGroupMessage.mutateAsync({
-        sourceGroupId: groupIdBigInt,
-        messageId: msg.id,
-        targetConversationId: target.id,
-      });
-      toast.success(`Forwarded to ${target.name}`);
-    } catch {
-      toast.error("Failed to forward message");
-    }
-  };
+  const handleForwardGroupMessage = useCallback(
+    async (msg: ExtendedGroupMessage, target: ForwardTarget) => {
+      try {
+        await forwardGroupMessage.mutateAsync({
+          sourceGroupId: groupIdBigInt,
+          messageId: msg.id,
+          targetConversationId: target.id,
+        });
+        toast.success(`Forwarded to ${target.name}`);
+      } catch {
+        toast.error("Failed to forward message");
+      }
+    },
+    [forwardGroupMessage, groupIdBigInt],
+  );
 
-  const handleReactToGroupMessage = async (
-    msg: ExtendedGroupMessage,
-    emoji: string,
-  ) => {
-    try {
-      await reactToGroupMessage.mutateAsync({
-        groupId: groupIdBigInt,
-        messageId: msg.id,
-        emoji,
-      });
-    } catch {
-      // Silent fail — reaction is a nice-to-have
-    }
-  };
+  const handleReactToGroupMessage = useCallback(
+    async (msg: ExtendedGroupMessage, emoji: string) => {
+      try {
+        await reactToGroupMessage.mutateAsync({
+          groupId: groupIdBigInt,
+          messageId: msg.id,
+          emoji,
+        });
+      } catch {
+        // Silent fail — reaction is a nice-to-have
+      }
+    },
+    [reactToGroupMessage, groupIdBigInt],
+  );
 
-  const handlePinGroupMessage = async (msg: ExtendedGroupMessage) => {
-    try {
-      await pinGroupMessage.mutateAsync({
-        groupId: groupIdBigInt,
-        messageId: msg.id,
-      });
-      toast.success("Message pinned");
-    } catch {
-      toast.error("Failed to pin message");
-    }
-  };
+  const handlePinGroupMessage = useCallback(
+    async (msg: ExtendedGroupMessage) => {
+      try {
+        await pinGroupMessage.mutateAsync({
+          groupId: groupIdBigInt,
+          messageId: msg.id,
+        });
+        toast.success("Message pinned");
+      } catch {
+        toast.error("Failed to pin message");
+      }
+    },
+    [pinGroupMessage, groupIdBigInt],
+  );
 
-  const handleUnpinGroupMessage = async () => {
+  const handleUnpinGroupMessage = useCallback(async () => {
     try {
       await unpinGroupMessage.mutateAsync(groupIdBigInt);
       toast.success("Message unpinned");
     } catch {
       toast.error("Failed to unpin message");
     }
-  };
-
-  const renderMessageContent = (
-    content: (typeof messages)[0]["content"],
-    timestamp: bigint,
-    isText: boolean,
-  ) => {
-    if (isText && content.__kind__ === "text") {
-      if (containsProfileLink(content.text)) {
-        return (
-          <>
-            <ProfileLinkMessageText
-              text={content.text}
-              className="text-sm whitespace-pre-wrap break-words"
-            />
-            {content.text?.includes("/pay/") && (
-              <PaymentLinkMessageText text={content.text} />
-            )}
-          </>
-        );
-      }
-      if (content.text?.includes("/pay/")) {
-        return <PaymentLinkMessageText text={content.text} />;
-      }
-      return (
-        <p className="text-sm whitespace-pre-wrap break-words">
-          {showSearch && searchTerm ? (
-            <HighlightText text={content.text} term={searchTerm} />
-          ) : (
-            content.text
-          )}
-        </p>
-      );
-    }
-    if (content.__kind__ === "text")
-      return (
-        <p className="text-sm whitespace-pre-wrap break-words">
-          {containsProfileLink(content.text) ? (
-            <>
-              <ProfileLinkMessageText
-                text={content.text}
-                className="text-sm whitespace-pre-wrap break-words"
-              />
-              {content.text?.includes("/pay/") && (
-                <PaymentLinkMessageText text={content.text} />
-              )}
-            </>
-          ) : content.text?.includes("/pay/") ? (
-            <PaymentLinkMessageText text={content.text} />
-          ) : (
-            content.text
-          )}
-        </p>
-      );
-    if (content.__kind__ === "image") {
-      if (isMediaExpired(timestamp))
-        return (
-          <ExpiredMediaPlaceholder
-            mediaType="image"
-            className="max-w-[200px]"
-          />
-        );
-      return (
-        <img
-          src={content.image.getDirectURL()}
-          alt="Shared media"
-          className="max-w-[200px] max-h-[200px] rounded-lg object-cover"
-        />
-      );
-    }
-    if (content.__kind__ === "video") {
-      if (isMediaExpired(timestamp))
-        return (
-          <ExpiredMediaPlaceholder
-            mediaType="video"
-            className="max-w-[200px]"
-          />
-        );
-      return <GroupVideoPlayer blob={content.video} />;
-    }
-    if (content.__kind__ === "voice") {
-      if (isMediaExpired(timestamp))
-        return (
-          <ExpiredMediaPlaceholder
-            mediaType="voice"
-            className="max-w-[200px]"
-          />
-        );
-      return <GroupAudioPlayer blob={content.voice} />;
-    }
-    if (content.__kind__ === "media") {
-      if (isMediaExpired(timestamp))
-        return (
-          <ExpiredMediaPlaceholder
-            mediaType="media"
-            className="max-w-[200px]"
-          />
-        );
-      return (
-        <img
-          src={content.media.getDirectURL()}
-          alt="Media"
-          className="max-w-[200px] max-h-[200px] rounded-lg object-cover"
-        />
-      );
-    }
-    return (
-      <p className="text-sm text-muted-foreground italic">
-        Unsupported message type
-      </p>
-    );
-  };
+  }, [unpinGroupMessage, groupIdBigInt]);
 
   if (groupLoading) {
     return (
@@ -1530,7 +2069,10 @@ export default function GroupChatPage() {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 pb-4">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-3 pb-4"
+      >
         {messagesLoading ? (
           <div className="flex justify-center py-8">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
@@ -1552,177 +2094,32 @@ export default function GroupChatPage() {
                 </p>
               </div>
             )}
-            {filteredMessages.map((msg) => {
-              const isOwn = msg.sender.toString() === currentPrincipal;
-              const isEditing = editingMessageId === msg.id;
-              const reactions = msg.reactions ?? [];
-              const replyToId = msg.replyToId ?? null;
-              const showEmojiPicker = emojiPickerForId === msg.id;
-              const isTextMsg = msg.content.__kind__ === "text";
-              const isThisPinned = pinnedGroupMessage?.id === msg.id;
-
-              return (
-                <div
-                  key={msg.id.toString()}
-                  data-message-id={msg.id.toString()}
-                  className={`flex ${isOwn ? "justify-end" : "justify-start"} gap-2 group`}
-                >
-                  {!isOwn && (
-                    <img
-                      src={
-                        msg.senderProfile?.profilePicture?.getDirectURL() ||
-                        "/assets/generated/avatar-placeholder.dim_200x200.png"
-                      }
-                      alt={msg.senderProfile?.name || "User"}
-                      className="w-7 h-7 rounded-full object-cover flex-shrink-0 self-end"
-                    />
-                  )}
-                  <div
-                    className={`max-w-[70%] ${isOwn ? "items-end" : "items-start"} flex flex-col gap-0.5`}
-                  >
-                    {!isOwn && (
-                      <span className="text-xs text-muted-foreground px-1">
-                        {msg.senderProfile?.name || "Unknown"}
-                      </span>
-                    )}
-                    <div
-                      className={`flex items-center gap-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
-                    >
-                      {/* Message bubble with single-tap emoji reaction */}
-                      <div className="relative">
-                        <div
-                          className={`px-3 py-2 rounded-2xl cursor-pointer select-none ${isOwn ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!msg.isDeleted && !isEditing) {
-                              setEmojiPickerForId(
-                                emojiPickerForId === msg.id ? null : msg.id,
-                              );
-                            }
-                          }}
-                        >
-                          {/* Reply quote */}
-                          {replyToId && !msg.isDeleted && (
-                            <ReplyQuoteBlock
-                              text={getReplySnippet(replyToId)}
-                            />
-                          )}
-
-                          {msg.isDeleted ? (
-                            <p className="text-sm italic text-muted-foreground">
-                              [Message deleted]
-                            </p>
-                          ) : isEditing ? (
-                            <div className="flex gap-2 min-w-[180px]">
-                              <input
-                                value={editText}
-                                onChange={(e) => setEditText(e.target.value)}
-                                className="flex-1 bg-background/20 border-0 outline-none text-sm text-inherit rounded px-1"
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter")
-                                    handleEditGroupMessage(msg);
-                                  if (e.key === "Escape") {
-                                    setEditingMessageId(null);
-                                    setEditText("");
-                                  }
-                                }}
-                                data-ocid="group-msg-edit-input"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleEditGroupMessage(msg)}
-                                className="text-green-400 hover:text-green-300"
-                              >
-                                <Check className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingMessageId(null);
-                                  setEditText("");
-                                }}
-                                className="text-muted-foreground/70 hover:text-muted-foreground"
-                              >
-                                <X className="h-4 w-4" />
-                              </button>
-                            </div>
-                          ) : (
-                            renderMessageContent(
-                              msg.content,
-                              msg.timestamp,
-                              isTextMsg,
-                            )
-                          )}
-                        </div>
-
-                        {/* Emoji picker overlay */}
-                        {showEmojiPicker && !msg.isDeleted && (
-                          <EmojiReactionPicker
-                            isOwn={isOwn}
-                            onSelect={(emoji) =>
-                              handleReactToGroupMessage(msg, emoji)
-                            }
-                            onClose={() => setEmojiPickerForId(null)}
-                          />
-                        )}
-                      </div>
-
-                      {!msg.isDeleted && (
-                        <div className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                          <GroupMessageActions
-                            message={msg}
-                            isOwn={isOwn}
-                            isAdminUser={isAdmin || isCreator}
-                            isPinned={isThisPinned}
-                            onEdit={() => {
-                              setEditingMessageId(msg.id);
-                              setEditText(
-                                msg.content.__kind__ === "text"
-                                  ? msg.content.text
-                                  : "",
-                              );
-                            }}
-                            onDelete={() => handleDeleteGroupMessage(msg)}
-                            onForward={() => setForwardingMessage(msg)}
-                            onReply={() =>
-                              setReplyTo({
-                                id: msg.id,
-                                snippet: getMessageSnippet(msg),
-                              })
-                            }
-                            onPin={() => handlePinGroupMessage(msg)}
-                            onUnpin={handleUnpinGroupMessage}
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Reactions */}
-                    {reactions.length > 0 && (
-                      <ReactionBadges reactions={reactions} />
-                    )}
-
-                    <div
-                      className={`flex items-center gap-1.5 px-1 ${isOwn ? "justify-end" : "justify-start"}`}
-                    >
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(
-                          Number(msg.timestamp) / 1_000_000,
-                        ).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                      {msg.isEdited && !msg.isDeleted && (
-                        <span className="text-xs text-muted-foreground italic">
-                          (edited)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {filteredMessages.map((msg) => (
+              <GroupMessageItem
+                key={msg.id.toString()}
+                msg={msg}
+                currentPrincipal={currentPrincipal}
+                editingMessageId={editingMessageId}
+                editText={editText}
+                emojiPickerForId={emojiPickerForId}
+                pinnedMessageId={pinnedGroupMessage?.id ?? null}
+                isAdminOrCreator={isAdmin || isCreator}
+                showSearch={showSearch}
+                searchTerm={searchTerm}
+                onSetEditingMessageId={setEditingMessageId}
+                onSetEditText={setEditText}
+                onSetEmojiPickerForId={setEmojiPickerForId}
+                onSetForwardingMessage={setForwardingMessage}
+                onSetReplyTo={setReplyTo}
+                onEditMessage={handleEditGroupMessage}
+                onDeleteMessage={handleDeleteGroupMessage}
+                onReactToMessage={handleReactToGroupMessage}
+                onPinMessage={handlePinGroupMessage}
+                onUnpinMessage={handleUnpinGroupMessage}
+                getReplySnippet={getReplySnippet}
+                getMessageSnippet={getMessageSnippet}
+              />
+            ))}
 
             {/* Typing indicator */}
             {typingNames.length > 0 && <TypingBubble names={typingNames} />}
@@ -1752,45 +2149,62 @@ export default function GroupChatPage() {
           </div>
         )}
 
+        {/* BUG-G11: upload progress bar */}
+        {uploadProgress > 0 && uploadProgress < 100 && (
+          <div className="mb-2 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-rose-400 to-pink-500 transition-all duration-200 rounded-full"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+        )}
+
         <div className="flex items-end gap-2">
           <div className="flex gap-1">
             <button
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground"
+              onClick={() =>
+                !isSendingRef.current && fileInputRef.current?.click()
+              }
+              disabled={isSending}
+              className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground disabled:opacity-40"
               aria-label="Send image"
             >
               <ImageIcon size={18} />
             </button>
             <button
               onClick={() =>
-                !videoSending && videoFileInputRef.current?.click()
+                !isSendingRef.current &&
+                !videoSending &&
+                videoFileInputRef.current?.click()
               }
-              disabled={videoSending}
+              disabled={isSending || videoSending}
               className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground disabled:opacity-40"
               aria-label="Send video"
             >
               <Video size={18} />
             </button>
             <button
-              onClick={() => setShowVoiceRecorder(true)}
-              className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground"
+              onClick={() =>
+                !isSendingRef.current && setShowVoiceRecorder(true)
+              }
+              disabled={isSending}
+              className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground disabled:opacity-40"
               aria-label="Record voice"
             >
               <Mic size={18} />
             </button>
           </div>
           <input
+            ref={inputRef}
             type="text"
             value={messageText}
             onChange={(e) => handleTypingInput(e.target.value)}
-            onKeyDown={(e) =>
-              e.key === "Enter" && !e.shiftKey && handleSendText()
-            }
             placeholder="Type a message..."
             className="flex-1 bg-muted rounded-full px-4 py-2 text-sm outline-none focus:ring-1 focus:ring-primary/50 resize-none"
             data-ocid="group-msg-input"
           />
           <button
+            type="button"
             onClick={handleSendText}
             disabled={
               !messageText.trim() || sendMessageMutation.isPending || isSending

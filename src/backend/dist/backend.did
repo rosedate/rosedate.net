@@ -1,14 +1,3 @@
-type http_request_result = 
- record {
-   body: blob;
-   headers: vec http_header;
-   status: nat;
- };
-type http_header = 
- record {
-   name: text;
-   value: text;
- };
 type _ImmutableObjectStorageRefillResult = 
  record {
    success: opt bool;
@@ -21,6 +10,15 @@ type _ImmutableObjectStorageCreateCertificateResult =
  record {
    blob_hash: text;
    method: text;
+ };
+type Value = 
+ variant {
+   "bool": bool;
+   float: float64;
+   "int": int;
+   "nat": nat;
+   "null";
+   "text": text;
  };
 type UserRole = 
  variant {
@@ -56,13 +54,13 @@ type UnreadCounts =
 type TransformationOutput = 
  record {
    body: blob;
-   headers: vec http_header;
+   headers: vec HttpHeader;
    status: nat;
  };
 type TransformationInput = 
  record {
    context: blob;
-   response: http_request_result;
+   response: HttpRequestResult;
  };
 type TradeRequestMessage = 
  record {
@@ -100,6 +98,28 @@ type Story =
    timestamp: Time;
    viewCount: nat;
    viewedBy: vec principal;
+ };
+type SpinResult = 
+ record {
+   outcome: SpinOutcome;
+   payout: float64;
+   poolAfter: float64;
+   stake: float64;
+ };
+type SpinRecord = 
+ record {
+   id: nat;
+   outcome: SpinOutcome;
+   payout: float64;
+   player: principal;
+   stake: float64;
+   timestamp: int;
+   username: text;
+ };
+type SpinOutcome = 
+ variant {
+   loss: float64;
+   win: float64;
  };
 type ShoppingItem = 
  record {
@@ -160,6 +180,11 @@ type RoseTransaction =
    timestamp: Time;
    transactionType: RoseTransactionType;
  };
+type Result = 
+ record {
+   hasMore: bool;
+   rows: vec vec Cell;
+ };
 type ReceiptMessage = 
  record {
    amount: float64;
@@ -168,6 +193,14 @@ type ReceiptMessage =
    sender: principal;
    summary: text;
    timestamp: Time;
+ };
+type ProviderPosition = 
+ record {
+   contribution: float64;
+   portion: float64;
+   profitLoss: float64;
+   provider: principal;
+   sharePct: float64;
  };
 type ProfileWithPrincipal = 
  record {
@@ -193,6 +226,12 @@ type Post =
    image: opt ExternalBlob;
    timestamp: Time;
    viewCount: nat;
+ };
+type PoolOverview = 
+ record {
+   ownPosition: opt ProviderPosition;
+   totalPoolValue: float64;
+   totalProviders: nat;
  };
 type PlatformStats = 
  record {
@@ -282,6 +321,17 @@ type Message =
    senderProfile: opt UserProfile;
    timestamp: Time;
  };
+type HttpRequestResult = 
+ record {
+   body: blob;
+   headers: vec HttpHeader;
+   status: nat;
+ };
+type HttpHeader = 
+ record {
+   name: text;
+   value: text;
+ };
 type GroupUnreadCount = 
  record {
    groupId: nat;
@@ -313,6 +363,12 @@ type GroupChat =
    id: nat;
    name: text;
    participants: vec principal;
+ };
+type GamePoolInfo = 
+ record {
+   maxParticipation: float64;
+   playerParticipation: float64;
+   pool: float64;
  };
 type ExternalBlob = blob;
 type EmailPreferences = 
@@ -352,6 +408,11 @@ type CommentInteraction =
    timestamp: Time;
    user: principal;
  };
+type Cell = 
+ record {
+   name: text;
+   value: Value;
+ };
 type BlockRecord = 
  record {
    blocked: principal;
@@ -381,6 +442,14 @@ service : {
   _immutableObjectStorageUpdateGatewayPrincipals: () -> ();
   _initializeAccessControl: () -> ();
   addGroupParticipant: (groupId: nat, newParticipant: principal) -> ();
+  adminDepositToPool: (amount: float64) -> (variant {
+                                              err: text;
+                                              ok;
+                                            });
+  adminWithdrawFromPool: (amount: float64) -> (variant {
+                                                 err: text;
+                                                 ok;
+                                               });
   assignCallerUserRole: (user: principal, role: UserRole) -> ();
   blockUser: (userToBlock: principal) -> ();
   buyRosesFromUser: (seller: principal, amount: float64) -> ();
@@ -414,6 +483,14 @@ service : {
     });
   deleteNotification: (notificationId: nat) -> ();
   deletePost: (postId: text) -> ();
+  depositToGame: (amount: float64) -> (variant {
+                                         err: text;
+                                         ok;
+                                       });
+  depositToPool: (amount: float64) -> (variant {
+                                         err: text;
+                                         ok;
+                                       });
   /// Donate `amount` Roses to the charity pool.
   /// The standard 5% platform fee is applied: fee is distributed pro-rata to
   /// all holders, and the net (amount * 0.95) goes into charityPool.
@@ -430,6 +507,7 @@ service : {
     });
   editPost: (postId: text, content: text, image: opt ExternalBlob, embed:
    opt text) -> ();
+  execute: (qJson: text) -> (Result) query;
   filterProfiles: (filter: ProfileFilter, limit: nat, offset: nat) ->
    (vec ProfileWithPrincipal) query;
   followUser: (targetUser: principal) -> ();
@@ -480,6 +558,8 @@ service : {
   getConversations: () -> (vec Conversation) query;
   getFollowerCount: (targetUser: principal) -> (nat) query;
   getFollowingCount: (targetUser: principal) -> (nat) query;
+  getGameHistory: () -> (vec SpinRecord) query;
+  getGamePool: () -> (GamePoolInfo) query;
   getGroupChats: () -> (vec GroupChat) query;
   getGroupDetails: (groupId: nat) -> (GroupChat) query;
   getGroupMessages: (groupId: nat) -> (vec GroupMessage) query;
@@ -500,6 +580,7 @@ service : {
   getPinnedStories: (userId: principal) -> (vec Story) query;
   getPinnedTrendingPost: () -> (opt Post) query;
   getPlatformStats: () -> (PlatformStats) query;
+  getPoolOverview: () -> (PoolOverview) query;
   getPostComments: (postId: text) -> (vec CommentInteraction) query;
   getPostCountByUser: (userId: principal) -> (nat) query;
   getPostInteractions: (postId: text) ->
@@ -514,6 +595,7 @@ service : {
   getPostViewCount: (postId: text) -> (nat) query;
   getPosts: (limit: nat, offset: nat) -> (vec Post) query;
   getPostsFromFollowedUsers: () -> (vec Post) query;
+  getProviderPosition: () -> (opt ProviderPosition) query;
   getRoseBalance: () -> (float64) query;
   getRoseSummary: () ->
    (record {
@@ -616,14 +698,26 @@ service : {
    EmailPreferences) -> ();
   saveCallerUserProfile: (profile: UserProfile) -> ();
   savePost: (postId: text) -> ();
+  schema: () -> (text) query;
   sellRosesToUser: (buyer: principal, amount: float64) -> ();
-  sendGroupMessage: (groupId: nat, content: MessageType, replyToId:
-   opt nat) -> ();
+  sendGroupMessage: (groupId: nat, content: MessageType, replyToId: opt nat,
+   dedupId: opt text) ->
+   (variant {
+      err: variant {
+             duplicate;
+             invalidDedupId;
+           };
+      ok: nat;
+    });
   sendMessage: (receiver: principal, content: MessageType, replyToId:
    opt nat) -> ();
   setGroupTyping: (groupId: nat, isTyping: bool) -> ();
   setStripeConfiguration: (config: StripeConfiguration) -> ();
   setTyping: (conversationId: nat, isTyping: bool) -> ();
+  spin: (stake: float64) -> (variant {
+                               err: text;
+                               ok: SpinResult;
+                             });
   transform: (input: TransformationInput) -> (TransformationOutput) query;
   unblockUser: (userToUnblock: principal) -> ();
   unfollowUser: (targetUser: principal) -> ();
@@ -653,4 +747,12 @@ service : {
   updateGroupAvatar: (groupId: nat, newAvatar: opt ExternalBlob) -> ();
   updateGroupName: (groupId: nat, newName: text) -> ();
   updateLastActive: () -> ();
+  withdrawFromGame: () -> (variant {
+                             err: text;
+                             ok: float64;
+                           });
+  withdrawFromPool: () -> (variant {
+                             err: text;
+                             ok: float64;
+                           });
 }

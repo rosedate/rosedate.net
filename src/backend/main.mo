@@ -8,20 +8,33 @@ import EmailClient "mo:caffeineai-email/emailClient";
 import Principal "mo:core/Principal";
 import Map "mo:core/Map";
 import Text "mo:core/Text";
-import Time "mo:base/Time";
+import Time "mo:core/Time";
 import Array "mo:core/Array";
 import Nat "mo:core/Nat";
 import Float "mo:base/Float";
 import Int "mo:core/Int";
-import Buffer "mo:base/Buffer";
+import List "mo:core/List";
 import Runtime "mo:core/Runtime";
 import Iter "mo:core/Iter";
+import OQL "mo:caffeineai-oql";
+import Entity "mo:caffeineai-oql/Entity";
+import Expose "mo:caffeineai-oql/Expose";
+import OQLNat "mo:caffeineai-oql/NatValue";
+import OQLText "mo:caffeineai-oql/TextValue";
+import OQLFloat "mo:caffeineai-oql/FloatValue";
+import OQLInt "mo:caffeineai-oql/IntValue";
+import OQLBool "mo:caffeineai-oql/BoolValue";
+import OQLPrincipal "mo:caffeineai-oql/PrincipalValue";
+import FairSpinGameTypes "types/fair-spin-game";
+import FairSpinGameApi "mixins/fair-spin-game-api";
+import LpPoolTypes "types/lp-pool";
+import LpPoolApi "mixins/lp-pool-api";
 
 
 
 actor {
   // Authorization
-  let accessControlState = AccessControl.initState();
+  let accessControlState : AccessControl.AccessControlState;
   include MixinAuthorization(accessControlState);
   include MixinObjectStorage();
 
@@ -54,11 +67,11 @@ actor {
     emailPreferences : ?EmailPreferences;
   };
 
-  var userProfiles = Map.empty<Principal, UserProfile>();
+  var userProfiles : Map.Map<Principal, UserProfile>;
 
   // Follow System
-  var followersMap = Map.empty<Principal, [Principal]>();
-  var followingMap = Map.empty<Principal, [Principal]>();
+  var followersMap : Map.Map<Principal, [Principal]>;
+  var followingMap : Map.Map<Principal, [Principal]>;
 
   // Block System
   public type BlockRecord = {
@@ -67,8 +80,8 @@ actor {
     timestamp : Time.Time;
   };
 
-  var blockListMap = Map.empty<Principal, [Principal]>();
-  var blockRecords : [BlockRecord] = [];
+  var blockListMap : Map.Map<Principal, [Principal]>;
+  var blockRecords : [BlockRecord];
 
   // Helper function to check if user1 has blocked user2
   func isBlocked(blocker : Principal, blocked : Principal) : Bool {
@@ -470,7 +483,7 @@ actor {
 
     switch (followingMap.get(caller)) {
       case (?followingList) {
-        let buffer = Buffer.Buffer<Post>(0);
+        let buffer = List.empty<Post>();
         for ((__id, post) in posts.entries()) {
           // Filter out posts from blocked users
           if (not hasBlockingRelationship(caller, post.author)) {
@@ -479,7 +492,7 @@ actor {
             };
           };
         };
-        Buffer.toArray(buffer);
+        buffer.toArray();
       };
       case null {
         Runtime.trap("No following list found for user");
@@ -529,15 +542,15 @@ actor {
     timestamp : Time.Time;
   };
 
-  var nextStoryId = 0;
-  var stories = Map.empty<Nat, Story>();
-  var userStories = Map.empty<Principal, [Nat]>();
+  var nextStoryId : Nat;
+  var stories : Map.Map<Nat, Story>;
+  var userStories : Map.Map<Principal, [Nat]>;
   // Pinned/highlighted stories per user: storyId stays permanently until unpinned
-  var pinnedStories = Map.empty<Principal, [Nat]>();
+  var pinnedStories : Map.Map<Principal, [Nat]>;
   // Story gifts tracking
-  var storyGiftsMap = Map.empty<Nat, [RoseGiftOnStory]>();
+  var storyGiftsMap : Map.Map<Nat, [RoseGiftOnStory]>;
 
-  let storyDuration : Int = 72 * 60 * 60 * 1_000_000_000; // 72 hours in nanoseconds
+  let storyDuration : Int;
 
   public shared ({ caller }) func createStory(content : MessageType, caption : ?Text) : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
@@ -592,7 +605,7 @@ actor {
     };
 
     let now = Time.now();
-    let buffer = Buffer.Buffer<Story>(0);
+    let buffer = List.empty<Story>();
 
     for ((_storyId, story) in stories.entries()) {
       if (story.expiresAt > now) {
@@ -603,7 +616,7 @@ actor {
       };
     };
 
-    Buffer.toArray(buffer);
+    buffer.toArray();
   };
 
   public query ({ caller }) func getUserStories(userId : Principal) : async [Story] {
@@ -618,7 +631,7 @@ actor {
     };
 
     let now = Time.now();
-    let buffer = Buffer.Buffer<Story>(0);
+    let buffer = List.empty<Story>();
 
     // Collect pinned story IDs for this user
     let userPinnedIds = switch (pinnedStories.get(userId)) {
@@ -644,7 +657,7 @@ actor {
       case null {};
     };
 
-    Buffer.toArray(buffer);
+    buffer.toArray();
   };
 
   public shared ({ caller }) func markStoryAsViewed(storyId : Nat) : async () {
@@ -719,7 +732,7 @@ actor {
       };
     };
 
-    let storyBuffer = Buffer.Buffer<(Nat, Story)>(0);
+    let storyBuffer = List.empty<(Nat, Story)>();
     for ((storyId, story) in stories.entries()) {
       // Keep story if not expired OR if it is pinned by its author
       let isPinned = pinnedSet.containsKey(storyId);
@@ -732,7 +745,7 @@ actor {
 
     // Rebuild stories map without expired stories
     let newStories = Map.empty<Nat, Story>();
-    for ((storyId, story) in storyBuffer.vals()) {
+    for ((storyId, story) in storyBuffer.values()) {
       newStories.add(storyId, story);
     };
     stories := newStories;
@@ -815,14 +828,14 @@ actor {
     switch (pinnedStories.get(userId)) {
       case null { [] };
       case (?ids) {
-        let buffer = Buffer.Buffer<Story>(0);
+        let buffer = List.empty<Story>();
         for (storyId in ids.vals()) {
           switch (stories.get(storyId)) {
             case (?story) { buffer.add(story) };
             case null {}; // story was deleted — skip silently
           };
         };
-        Buffer.toArray(buffer);
+        buffer.toArray();
       };
     };
   };
@@ -998,11 +1011,13 @@ actor {
     replyToId : ?Nat;
   };
 
-  var nextGroupId = 0;
-  var nextGroupMessageId = 0;
-  var groupChats = Map.empty<Nat, GroupChat>();
-  var groupMessages = Map.empty<Nat, [GroupMessage]>();
-  var userGroups = Map.empty<Principal, [Nat]>();
+  var nextGroupId : Nat;
+  var nextGroupMessageId : Nat;
+  var groupChats : Map.Map<Nat, GroupChat>;
+  var groupMessages : Map.Map<Nat, [GroupMessage]>;
+  var userGroups : Map.Map<Principal, [Nat]>;
+  // dedupId -> accepted timestamp (nanoseconds); cleaned up periodically
+  var groupMessageDedupStore : Map.Map<Text, Int>;
 
   public shared ({ caller }) func createGroupChat(name : Text, initialParticipants : [Principal], avatar : ?Storage.ExternalBlob) : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
@@ -1299,13 +1314,51 @@ actor {
     };
   };
 
-  public shared ({ caller }) func sendGroupMessage(groupId : Nat, content : MessageType, replyToId : ?Nat) : async () {
+  public shared ({ caller }) func sendGroupMessage(groupId : Nat, content : MessageType, replyToId : ?Nat, dedupId : ?Text) : async { #ok : Nat; #err : { #duplicate; #invalidDedupId } } {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can send group messages");
     };
 
     if (not isGroupParticipant(groupId, caller)) {
       Runtime.trap("Unauthorized: Only group participants can send messages");
+    };
+
+    let now = Time.now();
+    let deduplicationWindowNs : Int = 10_000_000_000; // 10 seconds in nanoseconds
+
+    // BUG-G4: Validate dedupId does not contain a colon to prevent key collisions
+    switch (dedupId) {
+      case (?dId) {
+        if (dId.size() > 0) {
+          for (ch in dId.chars()) {
+            if (ch == ':') {
+              return #err(#invalidDedupId);
+            };
+          };
+        };
+      };
+      case null {};
+    };
+
+    // Deduplication check: if a dedupId is provided, reject duplicates within the window
+    let dedupStoreKey : ?Text = switch (dedupId) {
+      case (?dId) { ?(groupId.toText() # ":" # dId) };
+      case null { null };
+    };
+
+    switch (dedupStoreKey) {
+      case (?storeKey) {
+        switch (groupMessageDedupStore.get(storeKey)) {
+          case (?acceptedAt) {
+            if (now - acceptedAt < deduplicationWindowNs) {
+              // BUG-G1: Return explicit #duplicate error instead of silent 0
+              return #err(#duplicate);
+            };
+          };
+          case null {};
+        };
+      };
+      case null {};
     };
 
     switch (groupChats.get(groupId)) {
@@ -1328,6 +1381,34 @@ actor {
         let messageId = nextGroupMessageId;
         nextGroupMessageId += 1;
 
+        // Register dedupId now that messageId is known, and clean up expired entries
+        switch (dedupStoreKey) {
+          case (?storeKey) {
+            // BUG-G3: Enforce a size cap of 500 entries — prune oldest half when exceeded
+            if (groupMessageDedupStore.size() >= 500) {
+              let allEntries = groupMessageDedupStore.entries().toArray();
+              // Sort by timestamp ascending so oldest entries come first
+              let sorted = allEntries.sort(func((_, a), (_, b)) = Int.compare(a, b));
+              let pruneCount = sorted.size() / 2;
+              var i = 0;
+              while (i < pruneCount) {
+                groupMessageDedupStore.remove(sorted[i].0);
+                i += 1;
+              };
+            };
+            groupMessageDedupStore.add(storeKey, now);
+            // Also prune expired entries from this send cycle
+            let keysToRemove = groupMessageDedupStore.entries()
+              |> _.filter(func((_, ts) : (Text, Int)) : Bool { now - ts >= deduplicationWindowNs })
+              |> _.map(func((k, _) : (Text, Int)) : Text { k })
+              |> _.toArray();
+            for (k in keysToRemove.vals()) {
+              groupMessageDedupStore.remove(k);
+            };
+          };
+          case null {};
+        };
+
         let senderProfile = userProfiles.get(caller);
 
         let message : GroupMessage = {
@@ -1335,7 +1416,7 @@ actor {
           groupId;
           sender = caller;
           content;
-          timestamp = Time.now();
+          timestamp = now;
           senderProfile;
           isEdited = false;
           isDeleted = false;
@@ -1368,6 +1449,8 @@ actor {
             ignore createGroupMessageNotification(caller, participant, groupId, group.name, contentPreview);
           };
         };
+
+        #ok(messageId);
       };
       case null {
         Runtime.trap("Group not found");
@@ -1380,7 +1463,7 @@ actor {
       Runtime.trap("Unauthorized: Only users can view group chats");
     };
 
-    let buffer = Buffer.Buffer<GroupChat>(0);
+    let buffer = List.empty<GroupChat>();
     switch (userGroups.get(caller)) {
       case (?groupIds) {
         for (groupId in groupIds.vals()) {
@@ -1393,7 +1476,7 @@ actor {
       case null {};
     };
 
-    Buffer.toArray(buffer);
+    buffer.toArray();
   };
 
   public query ({ caller }) func getGroupMessages(groupId : Nat) : async [GroupMessage] {
@@ -1485,14 +1568,14 @@ actor {
     otherParticipantProfile : ?UserProfile;
   };
 
-  var nextMessageId = 0;
-  var nextConversationId = 0;
-  var conversations = Map.empty<Nat, Conversation>();
+  var nextMessageId : Nat;
+  var nextConversationId : Nat;
+  var conversations : Map.Map<Nat, Conversation>;
 
   // Pinned messages: conversationId -> pinnedMessageId
-  var conversationPinnedMessages = Map.empty<Nat, Nat>();
+  var conversationPinnedMessages : Map.Map<Nat, Nat>;
   // Pinned group messages: groupId -> pinnedGroupMessageId
-  var groupPinnedMessages = Map.empty<Nat, Nat>();
+  var groupPinnedMessages : Map.Map<Nat, Nat>;
 
   func createTradeRequestMessage(requester : Principal, amount : Float, requestType : Text) : TradeRequestMessage {
     {
@@ -2260,7 +2343,7 @@ actor {
       Runtime.trap("Unauthorized: Only users can view conversations");
     };
 
-    let buffer = Buffer.Buffer<Conversation>(0);
+    let buffer = List.empty<Conversation>();
     for ((__id, conv) in conversations.entries()) {
       let isParticipant = conv.participants.find(func(p) { p == caller });
       switch (isParticipant) {
@@ -2281,7 +2364,7 @@ actor {
         case null {};
       };
     };
-    Buffer.toArray(buffer);
+    buffer.toArray();
   };
 
   // Social Features
@@ -2305,11 +2388,11 @@ actor {
     viewCount : Nat;
   };
 
-  var posts = Map.empty<Text, Post>();
+  var posts : Map.Map<Text, Post>;
 
   // Pinned Trending Post
   // Only one post can be pinned at a time; stored as an optional post ID.
-  var pinnedTrendingPostId : ?Text = null;
+  var pinnedTrendingPostId : ?Text;
 
   // Pin a post to the top of the Trending tab. Admin-only action.
   public shared ({ caller }) func pinPostToTrending(postId : Text) : async () {
@@ -2399,15 +2482,15 @@ actor {
     timestamp : Time.Time;
   };
 
-  var nextCommentId = 0;
+  var nextCommentId : Nat;
 
-  var likesMap = Map.empty<Text, [LikeInteraction]>();
-  var commentsMap = Map.empty<Text, [CommentInteraction]>();
-  var savesMap = Map.empty<Text, [SaveInteraction]>();
-  var forwardsMap = Map.empty<Text, [ForwardInteraction]>();
-  var postRoseGiftsMap = Map.empty<Text, [RoseGiftOnPost]>();
+  var likesMap : Map.Map<Text, [LikeInteraction]>;
+  var commentsMap : Map.Map<Text, [CommentInteraction]>;
+  var savesMap : Map.Map<Text, [SaveInteraction]>;
+  var forwardsMap : Map.Map<Text, [ForwardInteraction]>;
+  var postRoseGiftsMap : Map.Map<Text, [RoseGiftOnPost]>;
   // Tracks which principals have viewed each post (for unique view counting)
-  var postViewersMap = Map.empty<Text, [Principal]>();
+  var postViewersMap : Map.Map<Text, [Principal]>;
 
   public shared ({ caller }) func createPost(content : Text, image : ?Storage.ExternalBlob, embed : ?Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
@@ -2737,7 +2820,7 @@ actor {
       Runtime.trap("Unauthorized: Only users can view saved posts");
     };
 
-    let buffer = Buffer.Buffer<Post>(0);
+    let buffer = List.empty<Post>();
     for ((postId, saves) in savesMap.entries()) {
       let userSaved = saves.find(func(s : SaveInteraction) : Bool { s.user == caller });
       switch (userSaved) {
@@ -2750,7 +2833,7 @@ actor {
         case null {};
       };
     };
-    let all = Buffer.toArray(buffer);
+        let all = buffer.toArray();
     let total = all.size();
     if (offset >= total) { return [] };
     let end = if (offset + limit > total) { total } else { offset + limit };
@@ -2916,14 +2999,14 @@ actor {
       Runtime.trap("Unauthorized: Only authenticated users can view posts");
     };
 
-    let buffer = Buffer.Buffer<Post>(0);
+    let buffer = List.empty<Post>();
     for ((_postId, post) in posts.entries()) {
       if (not hasBlockingRelationship(caller, post.author)) {
         buffer.add(post);
       };
     };
     // Sort by timestamp descending so newest posts appear first on page 1
-    let sorted = Buffer.toArray(buffer).sort(func(a : Post, b : Post) : { #less; #equal; #greater } {
+        let sorted = buffer.toArray().sort(func(a : Post, b : Post) : { #less; #equal; #greater } {
       Int.compare(b.timestamp, a.timestamp)
     });
     let total = sorted.size();
@@ -2937,14 +3020,14 @@ actor {
       Runtime.trap("Unauthorized: Only users can view their own posts");
     };
 
-    let buffer = Buffer.Buffer<Post>(0);
+    let buffer = List.empty<Post>();
     for ((__id, post) in posts.entries()) {
       if (post.author == caller) {
         buffer.add(post);
       };
     };
     // Sort by timestamp descending so newest posts appear first
-    let sorted = Buffer.toArray(buffer).sort(func(a : Post, b : Post) : { #less; #equal; #greater } {
+        let sorted = buffer.toArray().sort(func(a : Post, b : Post) : { #less; #equal; #greater } {
       Int.compare(b.timestamp, a.timestamp)
     });
     let total = sorted.size();
@@ -2964,14 +3047,14 @@ actor {
       Runtime.trap("Cannot view posts: blocking relationship exists");
     };
 
-    let buffer = Buffer.Buffer<Post>(0);
+    let buffer = List.empty<Post>();
     for ((__id, post) in posts.entries()) {
       if (post.author == userId) {
         buffer.add(post);
       };
     };
     // Sort by timestamp descending so newest posts appear first
-    let sorted = Buffer.toArray(buffer).sort(func(a : Post, b : Post) : { #less; #equal; #greater } {
+        let sorted = buffer.toArray().sort(func(a : Post, b : Post) : { #less; #equal; #greater } {
       Int.compare(b.timestamp, a.timestamp)
     });
     let total = sorted.size();
@@ -3025,16 +3108,23 @@ actor {
     feeDistributed : Float;
   };
 
-  var nextRoseTransactionId = 0;
-  var roseTransactions : [RoseTransaction] = [];
-  var roseBalances = Map.empty<Principal, Float>();
-  var totalCirculatingRoses : Float = 0.0;
+  var nextRoseTransactionId : Nat;
+  var roseTransactions : [RoseTransaction];
+  var roseBalances : Map.Map<Principal, Float>;
+  var totalCirculatingRoses : Float;
   // Charity Pool
-  var charityPool : Float = 0.0;
-  var charityLastClaimMap = Map.empty<Principal, Int>();
+  var charityPool : Float;
+  var charityLastClaimMap : Map.Map<Principal, Int>;
 
-  let totalRoseSupply : Float = 9_999_999.0;
-  let adminUsername : Text = "rosalia";
+  // Fair Spin (Turn the Clock) game state
+  let gameState : FairSpinGameTypes.GameState;
+
+  // Shared LP (liquidity provider) pool state — the game pool that all
+  // signed-in users and the admin can deposit into and withdraw from.
+  let lpPoolState : LpPoolTypes.LpPoolState;
+
+  let totalRoseSupply : Float;
+  let adminUsername : Text;
 
   // Internal function for Rose gifting (used by both chat and post gifting)
   func giftRosesInternal(sender : Principal, receiver : Principal, amount : Float) : Float {
@@ -3060,12 +3150,12 @@ actor {
 
     // Distribute fee among all holders
     if (totalCirculatingRoses > 0.0) {
-      let buffer = Buffer.Buffer<(Principal, Float)>(0);
+      let buffer = List.empty<(Principal, Float)>();
       for ((principal, balance) in roseBalances.entries()) {
         buffer.add((principal, balance));
       };
 
-      let holders = Buffer.toArray(buffer);
+      let holders = buffer.toArray();
 
       for ((principal, balance) in holders.vals()) {
         if (balance > 0.0) {
@@ -3447,11 +3537,11 @@ actor {
 
     // Distribute fee pro-rata to all holders
     if (totalCirculatingRoses > 0.0) {
-      let buffer = Buffer.Buffer<(Principal, Float)>(0);
+      let buffer = List.empty<(Principal, Float)>();
       for ((p, bal) in roseBalances.entries()) {
         buffer.add((p, bal));
       };
-      for ((p, bal) in buffer.vals()) {
+      for ((p, bal) in buffer.values()) {
         if (bal > 0.0) {
           let share = (bal / totalCirculatingRoses) * fee;
           let current = switch (roseBalances.get(p)) {
@@ -3519,11 +3609,11 @@ actor {
 
     // Distribute fee pro-rata to all holders
     if (totalCirculatingRoses > 0.0) {
-      let buffer = Buffer.Buffer<(Principal, Float)>(0);
+      let buffer = List.empty<(Principal, Float)>();
       for ((p, bal) in roseBalances.entries()) {
         buffer.add((p, bal));
       };
-      for ((p, bal) in buffer.vals()) {
+      for ((p, bal) in buffer.values()) {
         if (bal > 0.0) {
           let share = (bal / totalCirculatingRoses) * fee;
           let current = switch (roseBalances.get(p)) {
@@ -3760,15 +3850,15 @@ actor {
       Runtime.trap("Unauthorized: Only admin with username 'rosalia' can view all user profiles");
     };
 
-    let buffer = Buffer.Buffer<(Principal, UserProfile)>(0);
+    let buffer = List.empty<(Principal, UserProfile)>();
     for ((principal, profile) in userProfiles.entries()) {
       buffer.add((principal, profile));
     };
-    Buffer.toArray(buffer);
+    buffer.toArray();
   };
 
   // Payment System
-  var stripeConfig : ?Stripe.StripeConfiguration = null;
+  var stripeConfig : ?Stripe.StripeConfiguration;
 
   public query func isStripeConfigured() : async Bool {
     stripeConfig != null;
@@ -3800,9 +3890,9 @@ actor {
   };
 
   // HTTP Outcalls
-  var icpUsdExchangeRate : ?Float = ?8.0;
-  var lastExchangeRateUpdate : ?Time.Time = null;
-  let exchangeRateUpdateInterval : Int = 3_600_000_000_000;
+  var icpUsdExchangeRate : ?Float;
+  var lastExchangeRateUpdate : ?Time.Time;
+  let exchangeRateUpdateInterval : Int;
 
   func shouldUpdateExchangeRate() : Bool {
     switch (lastExchangeRateUpdate) {
@@ -3924,7 +4014,7 @@ actor {
     };
 
     let currentYear = 2024;
-    let buffer = Buffer.Buffer<ProfileWithPrincipal>(0);
+    let buffer = List.empty<ProfileWithPrincipal>();
 
     for ((principal, profile) in userProfiles.entries()) {
       if (principal != caller) {
@@ -3996,7 +4086,7 @@ actor {
       };
     };
 
-    let all = Buffer.toArray(buffer);
+        let all = buffer.toArray();
     let total = all.size();
     if (offset >= total) { return [] };
     let end = if (offset + limit > total) { total } else { offset + limit };
@@ -4078,7 +4168,7 @@ actor {
       case null { 20 };
     };
 
-    let userBuffer = Buffer.Buffer<SearchResult>(0);
+    let userBuffer = List.empty<SearchResult>();
     for ((principal, profile) in userProfiles.entries()) {
       if (principal != caller) {
         // Filter out blocked users
@@ -4105,7 +4195,7 @@ actor {
       };
     };
 
-    let messageBuffer = Buffer.Buffer<SearchResult>(0);
+    let messageBuffer = List.empty<SearchResult>();
     for ((conversationId, conversation) in conversations.entries()) {
       let isParticipant = conversation.participants.find(func(p : Principal) : Bool { p == caller });
       switch (isParticipant) {
@@ -4162,7 +4252,7 @@ actor {
       };
     };
 
-    let postBuffer = Buffer.Buffer<SearchResult>(0);
+    let postBuffer = List.empty<SearchResult>();
     for ((_postId, post) in posts.entries()) {
       // Filter out posts from blocked users
       if (not hasBlockingRelationship(caller, post.author)) {
@@ -4194,21 +4284,21 @@ actor {
       };
     };
 
-    let results = Buffer.Buffer<SearchResult>(0);
+    let results = List.empty<SearchResult>();
 
-    for (res in userBuffer.vals()) {
+    for (res in userBuffer.values()) {
       if (results.size() < max) results.add(res);
     };
 
-    for (res in messageBuffer.vals()) {
+    for (res in messageBuffer.values()) {
       if (results.size() < max) results.add(res);
     };
 
-    for (res in postBuffer.vals()) {
+    for (res in postBuffer.values()) {
       if (results.size() < max) results.add(res);
     };
 
-    Buffer.toArray(results);
+    results.toArray();
   };
 
   // Notification System
@@ -4239,8 +4329,8 @@ actor {
     #groupAdd;
   };
 
-  var nextNotificationId = 0;
-  var notificationsMap = Map.empty<Principal, [Notification]>();
+  var nextNotificationId : Nat;
+  var notificationsMap : Map.Map<Principal, [Notification]>;
 
   func createNotification(userId : Principal, notificationType : NotificationType, content : Text, linkedId : ?Text, linkedType : ?Text) : Notification {
     {
@@ -4974,10 +5064,10 @@ actor {
 
   // ── Online Status ─────────────────────────────────────────────────────────
   // Tracks the last time each user was seen active (nanosecond timestamp).
-  var lastActiveMap = Map.empty<Principal, Int>();
+  var lastActiveMap : Map.Map<Principal, Int>;
 
   // 5 minutes in nanoseconds
-  let onlineThreshold : Int = 5 * 60 * 1_000_000_000;
+  let onlineThreshold : Int;
 
   // Call this from the frontend every ~60 seconds to keep presence alive.
   public shared ({ caller }) func updateLastActive() : async () {
@@ -5004,13 +5094,13 @@ actor {
       Runtime.trap("Unauthorized: Only users can view online users");
     };
     let now = Time.now();
-    let buffer = Buffer.Buffer<Principal>(0);
+    let buffer = List.empty<Principal>();
     for ((principal, lastActive) in lastActiveMap.entries()) {
       if (now - lastActive <= onlineThreshold) {
         buffer.add(principal);
       };
     };
-    Buffer.toArray(buffer);
+    buffer.toArray();
   };
 
   // Returns the raw lastActive nanosecond timestamp for a given user, or null
@@ -5115,7 +5205,7 @@ actor {
       Runtime.trap("Unauthorized: Only users can view unread counts");
     };
 
-    let directBuffer = Buffer.Buffer<DirectUnreadCount>(0);
+    let directBuffer = List.empty<DirectUnreadCount>();
     for ((convId, conv) in conversations.entries()) {
       if (conv.participants.find(func(p : Principal) : Bool { p == caller }) != null) {
         var count = 0;
@@ -5133,7 +5223,7 @@ actor {
       };
     };
 
-    let groupBuffer = Buffer.Buffer<GroupUnreadCount>(0);
+    let groupBuffer = List.empty<GroupUnreadCount>();
     switch (userGroups.get(caller)) {
       case null {};
       case (?groupIds) {
@@ -5160,21 +5250,21 @@ actor {
     };
 
     {
-      direct = Buffer.toArray(directBuffer);
-      groups = Buffer.toArray(groupBuffer);
+      direct = directBuffer.toArray();
+      groups = groupBuffer.toArray();
     };
   };
 
   // ── Typing Indicators ────────────────────────────────────────────────────
 
   // Stores typing state: conversationId -> [(principal, timestamp)]
-  var typingMap = Map.empty<Nat, [(Principal, Int)]>();
+  var typingMap : Map.Map<Nat, [(Principal, Int)]>;
 
   // Stores group typing state: groupId -> [(principal, timestamp)]
-  var groupTypingMap = Map.empty<Nat, [(Principal, Int)]>();
+  var groupTypingMap : Map.Map<Nat, [(Principal, Int)]>;
 
   // 5 seconds in nanoseconds — typing state expires after this
-  let typingExpiry : Int = 5 * 1_000_000_000;
+  let typingExpiry : Int;
 
   // Set or clear the caller's typing indicator in a direct conversation.
   public shared ({ caller }) func setTyping(conversationId : Nat, isTyping : Bool) : async () {
@@ -5219,13 +5309,13 @@ actor {
     switch (typingMap.get(conversationId)) {
       case null { [] };
       case (?entries) {
-        let buffer = Buffer.Buffer<Principal>(0);
+        let buffer = List.empty<Principal>();
         for ((p, ts) in entries.vals()) {
           if (p != caller and (now - ts) <= typingExpiry) {
             buffer.add(p);
           };
         };
-        Buffer.toArray(buffer);
+        buffer.toArray();
       };
     };
   };
@@ -5271,13 +5361,13 @@ actor {
     switch (groupTypingMap.get(groupId)) {
       case null { [] };
       case (?entries) {
-        let buffer = Buffer.Buffer<Principal>(0);
+        let buffer = List.empty<Principal>();
         for ((p, ts) in entries.vals()) {
           if (p != caller and (now - ts) <= typingExpiry) {
             buffer.add(p);
           };
         };
-        Buffer.toArray(buffer);
+        buffer.toArray();
       };
     };
   };
@@ -5457,6 +5547,131 @@ actor {
 
     msgs.find(func(m : GroupMessage) : Bool { m.id == pinnedId });
   };
+
+  // Flatten every player's game history into a single stream of spin records
+  // so the Fair Spin game data is queryable through OQL.
+  func allSpinRecords() : Iter.Iter<FairSpinGameTypes.SpinRecord> {
+    let buffer = List.empty<FairSpinGameTypes.SpinRecord>();
+    for ((_player, records) in gameState.gameHistory.entries()) {
+      for (r in records.vals()) {
+        buffer.add(r);
+      };
+    };
+    buffer.toArray().vals()
+  };
+
+  include Expose({
+    entities = [
+      OQL.Entity.manual<(Principal, UserProfile)>("userProfile", func() = userProfiles.entries(), "UserProfile", "owner")
+        .payload("owner", func((k, _v) : (Principal, UserProfile)) : Text { k.toText() })
+        .payload("username", func((_k, v) : (Principal, UserProfile)) : Text { v.username })
+        .payload("bio", func((_k, v) : (Principal, UserProfile)) : Text { switch (v.bio) { case (?t) t; case null "" } })
+        .controllerOnly()
+        .build(),
+      OQL.Entity.manual<(Text, Post)>("post", func() = posts.entries(), "Post", "id")
+        .payload("id", func((k, _v) : (Text, Post)) : Text { k })
+        .payload("author", func((_k, v) : (Text, Post)) : Text { v.author.toText() })
+        .payload("content", func((_k, v) : (Text, Post)) : Text { v.content })
+        .controllerOnly()
+        .build(),
+      OQL.Entity.manual<(Nat, Story)>("story", func() = stories.entries(), "Story", "id")
+        .payload("id", func((k, _v) : (Nat, Story)) : Text { k.toText() })
+        .payload("author", func((_k, v) : (Nat, Story)) : Text { v.author.toText() })
+        .payload("caption", func((_k, v) : (Nat, Story)) : Text { switch (v.caption) { case (?t) t; case null "" } })
+        .controllerOnly()
+        .build(),
+      OQL.Entity.manual<(Nat, Conversation)>("conversation", func() = conversations.entries(), "Conversation", "id")
+        .payload("id", func((k, _v) : (Nat, Conversation)) : Text { k.toText() })
+        .controllerOnly()
+        .build(),
+      OQL.Entity.manual<(Nat, GroupChat)>("groupChat", func() = groupChats.entries(), "GroupChat", "id")
+        .payload("id", func((k, _v) : (Nat, GroupChat)) : Text { k.toText() })
+        .payload("name", func((_k, v) : (Nat, GroupChat)) : Text { v.name })
+        .controllerOnly()
+        .build(),
+      OQL.Entity.manual<RoseTransaction>("roseTransaction", func() = roseTransactions.vals(), "RoseTransaction", "id")
+        .payload("id", func(r : RoseTransaction) : Text { r.id.toText() })
+        .payload("amount", func(r : RoseTransaction) : Float { r.amount })
+        .controllerOnly()
+        .build(),
+      OQL.Entity.manual<(Principal, Float)>("roseBalance", func() = roseBalances.entries(), "RoseBalance", "owner")
+        .payload("owner", func((k, _v) : (Principal, Float)) : Text { k.toText() })
+        .payload("balance", func((_k, v) : (Principal, Float)) : Float { v })
+        .controllerOnly()
+        .build(),
+      OQL.Entity.manual<BlockRecord>("blockRecord", func() = blockRecords.vals(), "BlockRecord", "blocker")
+        .payload("blocker", func(b : BlockRecord) : Text { b.blocker.toText() })
+        .payload("blocked", func(b : BlockRecord) : Text { b.blocked.toText() })
+        .controllerOnly()
+        .build(),
+      // Fair Spin game — the game pool singleton (playerPool, nextSpinId)
+      OQL.Entity.manual<FairSpinGameTypes.GameState>("gameState", func() = [gameState].vals(), "GameState", "id")
+        .payload("id", func(_ : FairSpinGameTypes.GameState) : Text { "pool" })
+        .payload("playerPool", func(g : FairSpinGameTypes.GameState) : Float { g.playerPool })
+        .payload("nextSpinId", func(g : FairSpinGameTypes.GameState) : Nat { g.nextSpinId })
+        .controllerOnly()
+        .build(),
+      // Fair Spin game — per-player participation in the pool
+      OQL.Entity.manual<(Principal, Float)>("gameParticipation", func() = gameState.playerParticipation.entries(), "GameParticipation", "owner")
+        .payload("owner", func((k, _v) : (Principal, Float)) : Text { k.toText() })
+        .payload("participation", func((_k, v) : (Principal, Float)) : Float { v })
+        .controllerOnly()
+        .build(),
+      // Fair Spin game — per-player last spin time
+      OQL.Entity.manual<(Principal, Int)>("gameLastSpin", func() = gameState.lastSpinTime.entries(), "GameLastSpin", "owner")
+        .payload("owner", func((k, _v) : (Principal, Int)) : Text { k.toText() })
+        .payload("lastSpinTime", func((_k, v) : (Principal, Int)) : Int { v })
+        .controllerOnly()
+        .build(),
+      // Fair Spin game — flattened spin history records across all players
+      OQL.Entity.manual<FairSpinGameTypes.SpinRecord>("gameSpin", func() = allSpinRecords(), "SpinRecord", "id")
+        .payload("id", func(r : FairSpinGameTypes.SpinRecord) : Nat { r.id })
+        .payload("player", func(r : FairSpinGameTypes.SpinRecord) : Text { r.player.toText() })
+        .payload("username", func(r : FairSpinGameTypes.SpinRecord) : Text { r.username })
+        .payload("stake", func(r : FairSpinGameTypes.SpinRecord) : Float { r.stake })
+        .payload("outcome", func(r : FairSpinGameTypes.SpinRecord) : Text { switch (r.outcome) { case (#win(_)) "win"; case (#loss(_)) "loss" } })
+        .payload("payout", func(r : FairSpinGameTypes.SpinRecord) : Float { r.payout })
+        .payload("timestamp", func(r : FairSpinGameTypes.SpinRecord) : Int { r.timestamp })
+        .controllerOnly()
+        .build(),
+      // Shared LP pool — the pool singleton (totalPoolValue, totalShares)
+      OQL.Entity.manual<LpPoolTypes.LpPoolState>("lpPool", func() = [lpPoolState].vals(), "LpPool", "id")
+        .payload("id", func(_ : LpPoolTypes.LpPoolState) : Text { "pool" })
+        .payload("totalPoolValue", func(s : LpPoolTypes.LpPoolState) : Float { s.totalPoolValue })
+        .payload("totalShares", func(s : LpPoolTypes.LpPoolState) : Float { s.totalShares })
+        .controllerOnly()
+        .build(),
+      // Shared LP pool — per-provider accounting (contribution, shares)
+      OQL.Entity.manual<(Principal, LpPoolTypes.ProviderState)>("lpProvider", func() = lpPoolState.providers.entries(), "LpProvider", "owner")
+        .payload("owner", func((k, _v) : (Principal, LpPoolTypes.ProviderState)) : Text { k.toText() })
+        .payload("contribution", func((_k, v) : (Principal, LpPoolTypes.ProviderState)) : Float { v.contribution })
+        .payload("shares", func((_k, v) : (Principal, LpPoolTypes.ProviderState)) : Float { v.shares })
+        .controllerOnly()
+        .build(),
+    ];
+  });
+
+  include FairSpinGameApi(
+    gameState,
+    lpPoolState,
+    roseBalances,
+    verifyAdminByUsername,
+    func(p : Principal) : ?Text {
+      switch (userProfiles.get(p)) {
+        case (?profile) ?profile.username;
+        case null null;
+      };
+    },
+  );
+
+  include LpPoolApi(
+    lpPoolState,
+    gameState,
+    roseBalances,
+    func(p : Principal) : Bool {
+      AccessControl.hasPermission(accessControlState, p, #user);
+    },
+  );
 
 };
 

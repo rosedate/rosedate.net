@@ -6,7 +6,6 @@ build:
         - type: script
           commands:
               - pnpm install --frozen-lockfile --prefer-offline --child-concurrency 2 --network-concurrency 6
-              - node ../../scripts/resize-images.js
               - |
                   cat > env.json <<EOF
                   {
@@ -24,6 +23,8 @@ build:
 
 sync:
     steps:
-        - type: assets
+        - type: plugin
+          url: https://github.com/dfinity/certified-assets/releases/download/migration-v2.2.1-6b48585/sync_plugin.wasm
+          sha256: ca7cb5666c30d2875f8d5e10535f8a53f97a86c79c263f7d5bdac2fdd1bbf83c
           dirs:
               - dist

@@ -165,6 +165,23 @@ export default function VoiceRecorder({
       setIsSending(true);
       try {
         await onRecorded(recordedBlob);
+        // Success: clear recorded audio state and close the modal so the
+        // same blob cannot be re-sent on a subsequent Send tap.
+        setRecordedBlob(null);
+        setRecordingTime(0);
+        setIsPlaying(false);
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        }
+        if (objectUrlRef.current) {
+          URL.revokeObjectURL(objectUrlRef.current);
+          objectUrlRef.current = null;
+        }
+        onCancel();
+      } catch {
+        // Error: preserve recordedBlob so the user can retry. Modal stays
+        // open; isSending is reset in the finally block below.
       } finally {
         setIsSending(false);
       }

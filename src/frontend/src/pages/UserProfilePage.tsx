@@ -459,7 +459,7 @@ function PostCard({
         ) : (
           <>
             {postText && (
-              <p className="text-sm text-foreground mb-3 leading-relaxed">
+              <p className="text-sm text-foreground mb-3 leading-relaxed whitespace-pre-wrap">
                 {postText}
               </p>
             )}

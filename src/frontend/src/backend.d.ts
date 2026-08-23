@@ -7,13 +7,8 @@ export interface None {
     __kind__: "None";
 }
 export type Option<T> = Some<T> | None;
-export class ExternalBlob {
-    getBytes(): Promise<Uint8Array<ArrayBuffer>>;
-    getDirectURL(): string;
-    static fromURL(url: string): ExternalBlob;
-    static fromBytes(blob: Uint8Array<ArrayBuffer>): ExternalBlob;
-    withUploadProgress(onProgress: (percentage: number) => void): ExternalBlob;
-}
+import type { ExternalBlob } from "@caffeineai/object-storage";
+export type { ExternalBlob } from "@caffeineai/object-storage";
 export type SearchResult = {
     __kind__: "postResult";
     postResult: {
@@ -53,9 +48,14 @@ export interface ProfileWithPrincipal {
 export interface TransformationOutput {
     status: bigint;
     body: Uint8Array;
-    headers: Array<http_header>;
+    headers: Array<HttpHeader>;
 }
 export type Time = bigint;
+export interface HttpRequestResult {
+    status: bigint;
+    body: Uint8Array;
+    headers: Array<HttpHeader>;
+}
 export interface GroupMessage {
     id: bigint;
     isDeleted: boolean;
@@ -116,6 +116,11 @@ export interface RoseTransaction {
     amount: number;
     receiver?: Principal;
 }
+export interface GamePoolInfo {
+    playerParticipation: number;
+    pool: number;
+    maxParticipation: number;
+}
 export interface TradeRequestMessage {
     requester: Principal;
     summary: string;
@@ -136,10 +141,6 @@ export interface UnreadCounts {
     groups: Array<GroupUnreadCount>;
     direct: Array<DirectUnreadCount>;
 }
-export interface TransformationInput {
-    context: Uint8Array;
-    response: http_request_result;
-}
 export interface Post {
     id: string;
     content: string;
@@ -149,12 +150,21 @@ export interface Post {
     timestamp: Time;
     image?: ExternalBlob;
 }
+export interface TransformationInput {
+    context: Uint8Array;
+    response: HttpRequestResult;
+}
 export interface UserAnalytics {
     giftsReceived: bigint;
     postCount: bigint;
     roseBalance: number;
     reactionsReceived: bigint;
     messageCount: bigint;
+}
+export interface PoolOverview {
+    totalProviders: bigint;
+    ownPosition?: ProviderPosition;
+    totalPoolValue: number;
 }
 export type StripeSessionStatus = {
     __kind__: "completed";
@@ -172,11 +182,40 @@ export interface StripeConfiguration {
     allowedCountries: Array<string>;
     secretKey: string;
 }
+export type Value = {
+    __kind__: "int";
+    int: bigint;
+} | {
+    __kind__: "nat";
+    nat: bigint;
+} | {
+    __kind__: "float";
+    float: number;
+} | {
+    __kind__: "bool";
+    bool: boolean;
+} | {
+    __kind__: "null";
+    null: null;
+} | {
+    __kind__: "text";
+    text: string;
+};
+export interface SpinResult {
+    stake: number;
+    outcome: SpinOutcome;
+    payout: number;
+    poolAfter: number;
+}
 export interface PlatformStats {
     totalMessages: bigint;
     totalUsers: bigint;
     totalInteractions: bigint;
     totalPosts: bigint;
+}
+export interface Cell {
+    value: Value;
+    name: string;
 }
 export interface Story {
     id: bigint;
@@ -188,6 +227,15 @@ export interface Story {
     timestamp: Time;
     caption?: string;
     reactions: Array<[string, Array<Principal>]>;
+}
+export interface SpinRecord {
+    id: bigint;
+    username: string;
+    player: Principal;
+    stake: number;
+    timestamp: bigint;
+    outcome: SpinOutcome;
+    payout: number;
 }
 export interface GroupUnreadCount {
     groupId: bigint;
@@ -227,14 +275,9 @@ export type MessageType = {
         postId: string;
     };
 };
-export interface http_header {
+export interface HttpHeader {
     value: string;
     name: string;
-}
-export interface http_request_result {
-    status: bigint;
-    body: Uint8Array;
-    headers: Array<http_header>;
 }
 export interface ReceiptMessage {
     fee: number;
@@ -250,6 +293,17 @@ export interface ShoppingItem {
     quantity: bigint;
     priceInCents: bigint;
     productDescription: string;
+}
+export interface Result {
+    hasMore: boolean;
+    rows: Array<Array<Cell>>;
+}
+export interface ProviderPosition {
+    provider: Principal;
+    sharePct: number;
+    profitLoss: number;
+    portion: number;
+    contribution: number;
 }
 export interface NotificationCount {
     groupAddCount: bigint;
@@ -268,6 +322,13 @@ export interface NotificationCount {
     postGiftCount: bigint;
     groupMessageCount: bigint;
 }
+export type SpinOutcome = {
+    __kind__: "win";
+    win: number;
+} | {
+    __kind__: "loss";
+    loss: number;
+};
 export interface Notification {
     id: bigint;
     linkedId?: string;
@@ -277,6 +338,14 @@ export interface Notification {
     isRead: boolean;
     timestamp: Time;
     linkedType?: string;
+}
+export interface ProfileFilter {
+    country?: string;
+    minAge?: bigint;
+    onlineOnly?: boolean;
+    gender?: string;
+    maxAge?: bigint;
+    minBalance?: number;
 }
 export interface Message {
     id: bigint;
@@ -290,14 +359,6 @@ export interface Message {
     receiver: Principal;
     reactions: Array<[string, Array<Principal>]>;
     readBy: Array<Principal>;
-}
-export interface ProfileFilter {
-    country?: string;
-    minAge?: bigint;
-    onlineOnly?: boolean;
-    gender?: string;
-    maxAge?: bigint;
-    minBalance?: number;
 }
 export interface DirectUnreadCount {
     conversationId: bigint;
@@ -350,8 +411,26 @@ export enum UserRole {
     user = "user",
     guest = "guest"
 }
+export enum Variant_invalidDedupId_duplicate {
+    invalidDedupId = "invalidDedupId",
+    duplicate = "duplicate"
+}
 export interface backendInterface {
     addGroupParticipant(groupId: bigint, newParticipant: Principal): Promise<void>;
+    adminDepositToPool(amount: number): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminWithdrawFromPool(amount: number): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     blockUser(userToBlock: Principal): Promise<void>;
     buyRosesFromUser(seller: Principal, amount: number): Promise<void>;
@@ -388,6 +467,20 @@ export interface backendInterface {
     }>;
     deleteNotification(notificationId: bigint): Promise<void>;
     deletePost(postId: string): Promise<void>;
+    depositToGame(amount: number): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    depositToPool(amount: number): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     /**
      * / Donate `amount` Roses to the charity pool.
      * / The standard 5% platform fee is applied: fee is distributed pro-rata to
@@ -409,6 +502,7 @@ export interface backendInterface {
         err: string;
     }>;
     editPost(postId: string, content: string, image: ExternalBlob | null, embed: string | null): Promise<void>;
+    execute(qJson: string): Promise<Result>;
     filterProfiles(filter: ProfileFilter, limit: bigint, offset: bigint): Promise<Array<ProfileWithPrincipal>>;
     followUser(targetUser: Principal): Promise<void>;
     forwardGroupMessageToConversation(sourceGroupId: bigint, messageId: bigint, targetConversationId: bigint): Promise<{
@@ -463,6 +557,8 @@ export interface backendInterface {
     getConversations(): Promise<Array<Conversation>>;
     getFollowerCount(targetUser: Principal): Promise<bigint>;
     getFollowingCount(targetUser: Principal): Promise<bigint>;
+    getGameHistory(): Promise<Array<SpinRecord>>;
+    getGamePool(): Promise<GamePoolInfo>;
     getGroupChats(): Promise<Array<GroupChat>>;
     getGroupDetails(groupId: bigint): Promise<GroupChat>;
     getGroupMessages(groupId: bigint): Promise<Array<GroupMessage>>;
@@ -486,6 +582,7 @@ export interface backendInterface {
     getPinnedStories(userId: Principal): Promise<Array<Story>>;
     getPinnedTrendingPost(): Promise<Post | null>;
     getPlatformStats(): Promise<PlatformStats>;
+    getPoolOverview(): Promise<PoolOverview>;
     getPostComments(postId: string): Promise<Array<CommentInteraction>>;
     getPostCountByUser(userId: Principal): Promise<bigint>;
     getPostInteractions(postId: string): Promise<{
@@ -499,6 +596,7 @@ export interface backendInterface {
     getPostViewCount(postId: string): Promise<bigint>;
     getPosts(limit: bigint, offset: bigint): Promise<Array<Post>>;
     getPostsFromFollowedUsers(): Promise<Array<Post>>;
+    getProviderPosition(): Promise<ProviderPosition | null>;
     getRoseBalance(): Promise<number>;
     getRoseSummary(): Promise<{
         totalCirculating: number;
@@ -626,12 +724,26 @@ export interface backendInterface {
     saveCallerEmailPreferences(email: string | null, preferences: EmailPreferences): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     savePost(postId: string): Promise<void>;
+    schema(): Promise<string>;
     sellRosesToUser(buyer: Principal, amount: number): Promise<void>;
-    sendGroupMessage(groupId: bigint, content: MessageType, replyToId: bigint | null): Promise<void>;
+    sendGroupMessage(groupId: bigint, content: MessageType, replyToId: bigint | null, dedupId: string | null): Promise<{
+        __kind__: "ok";
+        ok: bigint;
+    } | {
+        __kind__: "err";
+        err: Variant_invalidDedupId_duplicate;
+    }>;
     sendMessage(receiver: Principal, content: MessageType, replyToId: bigint | null): Promise<void>;
     setGroupTyping(groupId: bigint, isTyping: boolean): Promise<void>;
     setStripeConfiguration(config: StripeConfiguration): Promise<void>;
     setTyping(conversationId: bigint, isTyping: boolean): Promise<void>;
+    spin(stake: number): Promise<{
+        __kind__: "ok";
+        ok: SpinResult;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     transform(input: TransformationInput): Promise<TransformationOutput>;
     unblockUser(userToUnblock: Principal): Promise<void>;
     unfollowUser(targetUser: Principal): Promise<void>;
@@ -676,4 +788,18 @@ export interface backendInterface {
     updateGroupAvatar(groupId: bigint, newAvatar: ExternalBlob | null): Promise<void>;
     updateGroupName(groupId: bigint, newName: string): Promise<void>;
     updateLastActive(): Promise<void>;
+    withdrawFromGame(): Promise<{
+        __kind__: "ok";
+        ok: number;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    withdrawFromPool(): Promise<{
+        __kind__: "ok";
+        ok: number;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
 }

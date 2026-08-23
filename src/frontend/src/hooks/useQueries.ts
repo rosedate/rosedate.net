@@ -9,9 +9,11 @@ import type {
   GroupMessage,
   Notification,
   NotificationCount,
+  PoolOverview,
   Post,
   ProfileFilter,
   ProfileWithPrincipal,
+  ProviderPosition,
   RoseTransaction,
   SearchResult,
   Story,
@@ -1130,6 +1132,8 @@ export function useGetGroupMessages(groupId: bigint | null) {
     enabled: !!actor && groupId !== null,
     refetchInterval: () => (isVisible ? 10000 : false),
     refetchOnWindowFocus: true,
+    staleTime: 8000,
+    gcTime: 30000,
   });
 }
 
@@ -1170,6 +1174,16 @@ export function useCreateGroupChat() {
   });
 }
 
+// Module-level dedup map: dedupId → timestamp. Prevents duplicate backend calls
+// even if the mutation fires multiple times for the same user action.
+const _groupMsgDedupMap = new Map<string, number>();
+function _cleanGroupMsgDedup() {
+  const cutoff = Date.now() - 10000;
+  for (const [id, ts] of _groupMsgDedupMap.entries()) {
+    if (ts < cutoff) _groupMsgDedupMap.delete(id);
+  }
+}
+
 export function useSendGroupMessage() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
@@ -1180,9 +1194,32 @@ export function useSendGroupMessage() {
       groupId,
       content,
       replyToId,
-    }: { groupId: bigint; content: any; replyToId?: bigint }) => {
+      dedupId,
+    }: {
+      groupId: bigint;
+      content: any;
+      replyToId?: bigint;
+      dedupId?: string;
+    }) => {
       if (!actor) throw new Error("Actor not available");
-      await actor.sendGroupMessage(groupId, content, replyToId ?? null);
+
+      // Frontend dedup gate: if this exact dedupId was sent within the last 5 seconds,
+      // block the call entirely so no duplicate reaches the backend.
+      if (dedupId) {
+        _cleanGroupMsgDedup();
+        const lastSent = _groupMsgDedupMap.get(dedupId);
+        if (lastSent && Date.now() - lastSent < 5000) {
+          throw new Error("Duplicate send blocked");
+        }
+        _groupMsgDedupMap.set(dedupId, Date.now());
+      }
+
+      return actor.sendGroupMessage(
+        groupId,
+        content,
+        replyToId ?? null,
+        dedupId ?? null,
+      );
     },
     onSuccess: (_, { groupId }) => {
       queryClient.invalidateQueries({
@@ -1484,15 +1521,15 @@ export function useGetRoseBalance(options?: {
 }) {
   const { actor } = useActor();
 
-  return useQuery<bigint>({
+  return useQuery<number>({
     queryKey: ["roseBalance"],
     queryFn: async () => {
-      if (!actor) return BigInt(0);
+      if (!actor) return 0;
+      // Backend returns a Float64 number; preserve fractional precision so
+      // consumers can format with the correct number of decimal places.
+      // Do NOT round through BigInt here — that would drop the cents.
       const result = await actor.getRoseBalance();
-      // Handle both bigint and number returns
-      return typeof result === "bigint"
-        ? result
-        : BigInt(Math.round(Number(result)));
+      return typeof result === "bigint" ? Number(result) : Number(result);
     },
     enabled: !!actor,
     staleTime: options?.staleTime,
@@ -2233,5 +2270,79 @@ export function useGetPostCountByUser(userId: Principal | undefined) {
     },
     enabled: !!userId && !!actor,
     staleTime: 30_000,
+  });
+}
+
+// ── LP Pool Hooks ─────────────────────────────────────────────────────────────
+export function useGetPoolOverview() {
+  const { actor, isFetching: actorFetching } = useActor();
+
+  return useQuery<PoolOverview | null>({
+    queryKey: ["poolOverview"],
+    queryFn: async () => {
+      if (!actor) return null;
+      try {
+        return await actor.getPoolOverview();
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!actor && !actorFetching,
+  });
+}
+
+export function useGetProviderPosition() {
+  const { actor, isFetching: actorFetching } = useActor();
+
+  return useQuery<ProviderPosition | null>({
+    queryKey: ["providerPosition"],
+    queryFn: async () => {
+      if (!actor) return null;
+      try {
+        return await actor.getProviderPosition();
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!actor && !actorFetching,
+  });
+}
+
+export function useDepositToPool() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (amount: number) => {
+      if (!actor) throw new Error("Actor not available");
+      const res = await actor.depositToPool(amount);
+      if (res.__kind__ === "err") throw new Error(res.err);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["poolOverview"] });
+      queryClient.invalidateQueries({ queryKey: ["providerPosition"] });
+      queryClient.invalidateQueries({ queryKey: ["roseBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["roseSummary"] });
+    },
+  });
+}
+
+export function useWithdrawFromPool() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      const res = await actor.withdrawFromPool();
+      if (res.__kind__ === "err") throw new Error(res.err);
+      return res.ok;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["poolOverview"] });
+      queryClient.invalidateQueries({ queryKey: ["providerPosition"] });
+      queryClient.invalidateQueries({ queryKey: ["roseBalance"] });
+      queryClient.invalidateQueries({ queryKey: ["roseSummary"] });
+    },
   });
 }

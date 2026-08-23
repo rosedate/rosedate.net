@@ -161,14 +161,29 @@ function EmojiReactionPicker({
   onSelect,
   onClose,
   isOwn,
+  messageText,
 }: {
   onSelect: (emoji: string) => void;
   onClose: () => void;
   isOwn: boolean;
+  messageText?: string;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (!messageText) return;
+    navigator.clipboard.writeText(messageText).then(() => {
+      setCopied(true);
+      setTimeout(() => {
+        setCopied(false);
+        onClose();
+      }, 1500);
+    });
+  };
+
   return (
     <div
-      className={`absolute bottom-full mb-1 z-50 flex gap-1 bg-card border border-rose-100 rounded-full shadow-lg px-2 py-1 ${isOwn ? "right-0" : "left-0"}`}
+      className={`absolute bottom-full mb-1 z-50 flex items-center gap-1 bg-card border border-rose-100 rounded-full shadow-lg px-2 py-1 ${isOwn ? "right-0" : "left-0"}`}
       onClick={(e) => e.stopPropagation()}
     >
       {EMOJI_OPTIONS.map((emoji) => (
@@ -185,32 +200,54 @@ function EmojiReactionPicker({
           {emoji}
         </button>
       ))}
+      {messageText && (
+        <>
+          <div className="w-px h-5 bg-rose-100 mx-0.5" />
+          <button
+            type="button"
+            onClick={handleCopy}
+            className={`text-xs font-medium px-2 py-0.5 rounded-full transition-colors ${
+              copied
+                ? "bg-rose-500 text-white"
+                : "bg-rose-50 text-rose-600 hover:bg-rose-100"
+            }`}
+            aria-label="Copy message"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        </>
+      )}
     </div>
   );
 }
 
 // Reaction badges below a message
+// Defensive: a non-array (e.g. a Map/object from a shape mismatch) must never
+// reach .map() — that would throw and could surface the raw object's toString
+// in the DOM. Coerce to an empty array so unexpected shapes render nothing.
 function ReactionBadges({
   reactions,
 }: {
-  reactions: [string, string[]][];
+  reactions: [string, string[]][] | unknown;
 }) {
-  if (!reactions || reactions.length === 0) return null;
+  if (!Array.isArray(reactions) || reactions.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1 mt-1">
-      {reactions.map(([emoji, principals]) => (
-        <span
-          key={emoji}
-          className="inline-flex items-center gap-0.5 bg-rose-50 border border-rose-100 rounded-full px-1.5 py-0.5 text-xs"
-        >
-          {emoji}
-          {principals.length > 1 && (
-            <span className="text-rose-600 font-medium">
-              {principals.length}
-            </span>
-          )}
-        </span>
-      ))}
+      {reactions.map(([emoji, principals]) => {
+        // principals must also be an array; guard against nested shape mismatch
+        const count = Array.isArray(principals) ? principals.length : 0;
+        return (
+          <span
+            key={emoji}
+            className="inline-flex items-center gap-0.5 bg-rose-50 border border-rose-100 rounded-full px-1.5 py-0.5 text-xs"
+          >
+            {emoji}
+            {count > 1 && (
+              <span className="text-rose-600 font-medium">{count}</span>
+            )}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -486,6 +523,16 @@ function MessageActions({
 }) {
   const isText = message.content.__kind__ === "text";
   const isDeleted = message.isDeleted;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (!isText || isDeleted) return;
+    const text = (message.content as { __kind__: "text"; text: string }).text;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
 
   return (
     <DropdownMenu>
@@ -516,6 +563,17 @@ function MessageActions({
           >
             <ForwardIcon className="h-3.5 w-3.5 text-rose-500" />
             Forward
+          </DropdownMenuItem>
+        )}
+        {isText && !isDeleted && (
+          <DropdownMenuItem
+            onClick={handleCopy}
+            className="gap-2 cursor-pointer"
+          >
+            <span className="h-3.5 w-3.5 text-rose-500 flex items-center justify-center text-xs">
+              {copied ? "✓" : "⎘"}
+            </span>
+            {copied ? "Copied!" : "Copy"}
           </DropdownMenuItem>
         )}
         {!isDeleted &&
@@ -617,8 +675,13 @@ export default function ConversationPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUpRef = useRef(false);
+  const userSentMessageRef = useRef(false);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSendingRef = useRef(false);
+  // Deduplication: map of text → timestamp to prevent duplicate sends within 2s
+  const recentSendsRef = useRef<Map<string, number>>(new Map());
 
   // Try to parse conversationId as Principal for new chat flow
   let targetPrincipal: Principal | null = null;
@@ -732,9 +795,28 @@ export default function ConversationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation?.messages.length]);
 
+  // Track user scroll position to avoid hijacking scroll when reading history
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      isUserScrolledUpRef.current = distanceFromBottom > 100;
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Smart scroll-to-bottom: only auto-scroll when user sent a message or is already near the bottom
   // biome-ignore lint/correctness/useExhaustiveDependencies: conversation.messages is the correct dep for scroll-to-bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!isUserScrolledUpRef.current || userSentMessageRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      if (userSentMessageRef.current) {
+        userSentMessageRef.current = false;
+      }
+    }
   }, [conversation?.messages]);
 
   // Refetch when desktop tab becomes visible again (Page Visibility API)
@@ -823,11 +905,28 @@ export default function ConversationPage() {
 
   const handleSendTextMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!messageText.trim() || !otherParticipant) return;
+    const trimmed = messageText.trim();
+    if (!trimmed || !otherParticipant) return;
     if (isSendingRef.current) return;
+
+    // Client-side deduplication: reject same text within 2 seconds
+    const now = Date.now();
+    const dedupKey = trimmed;
+    const lastSent = recentSendsRef.current.get(dedupKey);
+    if (lastSent && now - lastSent < 2000) return;
+    recentSendsRef.current.set(dedupKey, now);
+    // Clean up old entries
+    for (const [k, t] of recentSendsRef.current.entries()) {
+      if (now - t > 5000) recentSendsRef.current.delete(k);
+    }
+
     isSendingRef.current = true;
     setIsSending(true);
-    const content: MessageType = { __kind__: "text", text: messageText.trim() };
+    // Clear input immediately so rapid clicks on empty field do nothing
+    setMessageText("");
+    // Signal smart scroll to follow this outgoing message
+    userSentMessageRef.current = true;
+    const content: MessageType = { __kind__: "text", text: trimmed };
     try {
       stopTyping();
       await sendMessage.mutateAsync({
@@ -835,10 +934,12 @@ export default function ConversationPage() {
         content,
         replyToId: replyTo?.id,
       });
-      setMessageText("");
       setReplyTo(null);
     } catch {
       toast.error("Failed to send message");
+      // Restore text on failure so the user can retry
+      setMessageText(trimmed);
+      recentSendsRef.current.delete(dedupKey);
     } finally {
       isSendingRef.current = false;
       setIsSending(false);
@@ -852,6 +953,7 @@ export default function ConversationPage() {
       toast.error("Please select an image file");
       return;
     }
+    userSentMessageRef.current = true;
     try {
       setUploadProgress(0);
       const blob = ExternalBlob.fromBytes(
@@ -881,6 +983,7 @@ export default function ConversationPage() {
     }
     const warning = getVideoUploadWarning(file);
     if (warning) toast.warning(warning, { duration: 5000 });
+    userSentMessageRef.current = true;
     try {
       setUploadProgress(0);
       const blob = ExternalBlob.fromBytes(
@@ -903,6 +1006,7 @@ export default function ConversationPage() {
 
   const handleVoiceRecorded = async (audioBlob: Blob) => {
     if (!otherParticipant) return;
+    userSentMessageRef.current = true;
     try {
       const blob = ExternalBlob.fromBytes(
         new Uint8Array(await audioBlob.arrayBuffer()),
@@ -920,6 +1024,7 @@ export default function ConversationPage() {
 
   const handleVideoRecorded = async (videoBlob: Blob) => {
     if (!otherParticipant) return;
+    userSentMessageRef.current = true;
     try {
       const blob = ExternalBlob.fromBytes(
         new Uint8Array(await videoBlob.arrayBuffer()),
@@ -1074,7 +1179,15 @@ export default function ConversationPage() {
     const avatarUrl = senderProfile?.profilePicture?.getDirectURL();
     const mediaExpired = isMediaExpired(message.timestamp);
     const isEditing = editingMessageId === message.id;
-    const reactions = message.reactions ?? [];
+    // Defensive: message.reactions may arrive as a Map/object on a shape
+    // mismatch. `?? []` does NOT coerce a Map to an array, so an explicit
+    // Array.isArray check is required — otherwise a Map would flow through to
+    // ReactionBadges and could render its raw toString ('1376': 151, ...) into
+    // the DOM.
+    const rawReactions = message.reactions;
+    const reactions: [string, string[]][] = Array.isArray(rawReactions)
+      ? rawReactions
+      : [];
     const isThisPinned = pinnedMessage?.id === message.id;
     const replyToId = message.replyToId ?? null;
     const showEmojiPicker = emojiPickerForId === message.id;
@@ -1277,6 +1390,12 @@ export default function ConversationPage() {
                   isOwn={isOwn}
                   onSelect={(emoji) => handleReactToMessage(message, emoji)}
                   onClose={() => setEmojiPickerForId(null)}
+                  messageText={
+                    message.content.__kind__ === "text"
+                      ? (message.content as { __kind__: "text"; text: string })
+                          .text
+                      : undefined
+                  }
                 />
               )}
             </div>
@@ -1575,7 +1694,10 @@ export default function ConversationPage() {
       )}
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 space-y-2">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 space-y-2"
+      >
         {/* Search empty state — shown when search is active but no messages match */}
         {showSearch && searchTerm && (filteredMessages ?? []).length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">

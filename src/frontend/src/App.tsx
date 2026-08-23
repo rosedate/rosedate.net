@@ -15,6 +15,7 @@ import { ShimmerSkeleton } from "./components/ShimmerSkeleton";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import ConversationPage from "./pages/ConversationPage";
 import EmailSettingsPage from "./pages/EmailSettingsPage";
+import FairSpinPage from "./pages/FairSpinPage";
 import GroupChatPage from "./pages/GroupChatPage";
 import PayPage from "./pages/PayPage";
 import PaymentFailurePage from "./pages/PaymentFailurePage";
@@ -195,6 +196,12 @@ const paymentPageRoute = createRoute({
   component: PaymentPage,
 });
 
+const fairSpinRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/fair-spin",
+  component: FairSpinPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   usersRoute,
@@ -211,6 +218,7 @@ const routeTree = rootRoute.addChildren([
   analyticsRoute,
   emailSettingsRoute,
   paymentPageRoute,
+  fairSpinRoute,
 ]);
 
 const router = createRouter({

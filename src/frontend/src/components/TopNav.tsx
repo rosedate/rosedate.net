@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "@tanstack/react-router";
-import { BarChart2, Moon, Search, Sun } from "lucide-react";
+import { BarChart2, Gift, Moon, Search, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useState } from "react";
 import { useGetUnreadNotificationCount } from "../hooks/useQueries";
@@ -55,6 +55,18 @@ export default function TopNav() {
 
           {/* Right Side Icons */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Fair Spin Button */}
+            <button
+              type="button"
+              onClick={() => navigate({ to: "/fair-spin" })}
+              className="flex items-center gap-1.5 h-8 sm:h-10 px-3 sm:px-4 rounded-full rose-gradient text-primary-foreground text-xs sm:text-sm font-semibold shadow-rose-glow-sm transition-all hover:shadow-rose-glow hover:scale-105"
+              title="Fair Spin"
+              data-ocid="nav-fair-spin-btn"
+            >
+              <Gift className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span className="hidden sm:inline">Fair Spin</span>
+            </button>
+
             {/* Dark Mode Toggle */}
             <button
               type="button"
